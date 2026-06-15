@@ -1,0 +1,1 @@
+# Aplicada-Streaming-Ejemplos_IA_SDD2.1D_Sistema_Georreferencia
