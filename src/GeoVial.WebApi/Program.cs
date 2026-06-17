@@ -65,6 +65,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Idempotencia transversal de operaciones no seguras con encabezado Idempotency-Key (CU-21).
+app.UseMiddleware<IdempotenciaMiddleware>();
+
 app.MapControllers();
 
 // Inicialización del almacén y seed del usuario raíz.
