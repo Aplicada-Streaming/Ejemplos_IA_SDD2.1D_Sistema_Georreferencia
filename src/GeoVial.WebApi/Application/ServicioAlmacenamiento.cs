@@ -49,7 +49,24 @@ public sealed class ServicioAlmacenamiento(GeoVialDbContext db, IRegistroAlmacen
         }
 
         registro.Activar(nombre);
+        await PersistirActivoAsync(nombre, ct);
         return Configuracion();
+    }
+
+    private async Task PersistirActivoAsync(string proveedor, CancellationToken ct)
+    {
+        var ajuste = await db.Set<AjusteSistema>()
+            .FirstOrDefaultAsync(a => a.Clave == AjusteSistema.ProveedorAlmacenamientoActivo, ct);
+        if (ajuste is null)
+        {
+            db.Set<AjusteSistema>().Add(new AjusteSistema(AjusteSistema.ProveedorAlmacenamientoActivo, proveedor));
+        }
+        else
+        {
+            ajuste.Establecer(proveedor);
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 
     private ConfiguracionAlmacenamientoDto Configuracion()
