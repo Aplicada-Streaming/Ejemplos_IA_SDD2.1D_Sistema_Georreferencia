@@ -1,0 +1,14 @@
+# Contexto de build de contenedores: excluye lo que no hace falta para compilar el backend.
+**/bin/
+**/obj/
+artifacts/
+tests/
+SDD2.1D/
+.git/
+.config/
+.vs/
+*.db
+*.db-shm
+*.db-wal
+storage-data/
+**/appsettings.Development.json

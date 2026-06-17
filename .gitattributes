@@ -1,0 +1,6 @@
+# Normalización de fin de línea para la documentación SDD 2.1 (invariante D2: LF).
+# Garantiza LF en el repositorio independientemente de core.autocrlf en checkouts Windows.
+
+* text=auto eol=lf
+*.md text eol=lf
+*.bat text eol=crlf

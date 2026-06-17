@@ -1,0 +1,49 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject EstadoSesion Sesion
+@inject NavigationManager Nav
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1">
+        <MudText Typo="Typo.h6">GeoVial</MudText>
+        @if (Sesion.EstaAutenticado)
+        {
+            <MudButton Href="/relevamientos" Variant="Variant.Text" Color="Color.Inherit" Class="ml-4">Relevamientos</MudButton>
+            <MudButton Href="/usuarios" Variant="Variant.Text" Color="Color.Inherit">Usuarios</MudButton>
+        }
+        <MudSpacer />
+        @if (Sesion.EstaAutenticado)
+        {
+            <MudText Class="mr-4">@Sesion.Usuario!.NombreUsuario — @Sesion.Usuario!.Rol.Texto()</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Inherit" OnClick="CerrarSesion">Cerrar sesión</MudButton>
+        }
+    </MudAppBar>
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+<div id="blazor-error-ui">
+    Ocurrió un error no controlado.
+    <a href="" class="reload">Recargar</a>
+    <a class="dismiss">X</a>
+</div>
+
+@code {
+    protected override void OnInitialized() => Sesion.Cambio += StateHasChanged;
+
+    public void Dispose() => Sesion.Cambio -= StateHasChanged;
+
+    private void CerrarSesion()
+    {
+        Sesion.Cerrar();
+        Nav.NavigateTo("/login");
+    }
+}

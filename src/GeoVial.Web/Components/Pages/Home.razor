@@ -1,0 +1,10 @@
+@page "/"
+@inject EstadoSesion Sesion
+@inject NavigationManager Nav
+
+<PageTitle>GeoVial</PageTitle>
+
+@code {
+    protected override void OnInitialized()
+        => Nav.NavigateTo(Sesion.EstaAutenticado ? "/usuarios" : "/login");
+}
