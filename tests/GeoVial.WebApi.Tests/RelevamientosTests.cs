@@ -172,4 +172,102 @@ public sealed class RelevamientosTests(FabricaWebApi fabrica) : IClassFixture<Fa
         (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/etiquetas", new CrearEtiquetaRequest("bache"))).StatusCode.Should().Be(HttpStatusCode.Created);
         (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/etiquetas", new CrearEtiquetaRequest("bache"))).StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
+
+    private static MultipartFormDataContent FormularioFoto(byte[] bytes, string contentType, IDictionary<string, string> campos)
+    {
+        var form = new MultipartFormDataContent();
+        var archivo = new ByteArrayContent(bytes);
+        archivo.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        form.Add(archivo, "Archivo", "foto.bin");
+        foreach (var (clave, valor) in campos)
+        {
+            form.Add(new StringContent(valor), clave);
+        }
+
+        return form;
+    }
+
+    [Fact]
+    public async Task Captura_de_foto_prioriza_ubicacion_incrustada_y_se_descarga()
+    {
+        var c = _fabrica.CreateClient();
+        var (tokenJa, tokenAg, idAgente) = await CrearJerarquiaAsync(c);
+
+        // Jefe crea relevamiento, marcador y asigna al agente.
+        Con(c, tokenJa);
+        var rel = (await (await c.PostAsJsonAsync("/api/v1/relevamientos", new CrearRelevamientoRequest("Tramo Ruta 8", "Ruta 8, alcantarilla"))).Content.ReadFromJsonAsync<RelevamientoDto>())!;
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/agentes", new AsignarAgenteRequest(idAgente))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var marcador = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores", new CrearMarcadorRequest(-34.5, -58.5, "Alcantarilla"))).Content.ReadFromJsonAsync<MarcadorDto>())!;
+
+        // El agente registra una observación y le sube una foto con coordenada incrustada Y manual.
+        Con(c, tokenAg);
+        var obs = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores/{marcador.Id}/observaciones", new CrearObservacionRequest("Erosión"))).Content.ReadFromJsonAsync<ObservacionDto>())!;
+
+        var bytes = new byte[] { 10, 20, 30, 40, 50, 60 };
+        using var form = FormularioFoto(bytes, "image/jpeg", new Dictionary<string, string>
+        {
+            ["LatitudIncrustada"] = "-34.61",
+            ["LongitudIncrustada"] = "-58.61",
+            ["LatitudManual"] = "-10.0",
+            ["LongitudManual"] = "-10.0",
+            ["Comentario"] = "Erosión en la base",
+        });
+        var subida = await c.PostAsync($"/api/v1/relevamientos/{rel.Id}/observaciones/{obs.Id}/fotos", form);
+        var cuerpo = await subida.Content.ReadAsStringAsync();
+        subida.StatusCode.Should().Be(HttpStatusCode.Created, cuerpo);
+        var foto = (await subida.Content.ReadFromJsonAsync<FotoDto>())!;
+
+        // RN-04: la coordenada incrustada gana a la manual.
+        foto.PendienteUbicacion.Should().BeFalse();
+        foto.Latitud.Should().Be(-34.61);
+        foto.Longitud.Should().Be(-58.61);
+        foto.Comentario.Should().Be("Erosión en la base");
+
+        // Listar por observación y por marcador (US-26).
+        var porObs = await c.GetFromJsonAsync<List<FotoDto>>($"/api/v1/relevamientos/{rel.Id}/observaciones/{obs.Id}/fotos");
+        porObs!.Should().ContainSingle(f => f.Id == foto.Id);
+
+        var porMarcador = await c.GetFromJsonAsync<List<FotoDto>>($"/api/v1/relevamientos/{rel.Id}/marcadores/{marcador.Id}/fotos");
+        porMarcador!.Should().ContainSingle(f => f.Id == foto.Id);
+
+        // Descargar el binario: coincide con lo subido.
+        var contenido = await c.GetAsync($"/api/v1/relevamientos/{rel.Id}/fotos/{foto.Id}/contenido");
+        contenido.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await contenido.Content.ReadAsByteArrayAsync()).Should().Equal(bytes);
+    }
+
+    [Fact]
+    public async Task Foto_sin_coordenadas_queda_pendiente_de_ubicacion()
+    {
+        var c = _fabrica.CreateClient();
+        var (tokenJa, _, _) = await CrearJerarquiaAsync(c);
+
+        Con(c, tokenJa);
+        var rel = (await (await c.PostAsJsonAsync("/api/v1/relevamientos", new CrearRelevamientoRequest("Tramo Ruta 7", "Ruta 7"))).Content.ReadFromJsonAsync<RelevamientoDto>())!;
+        var marcador = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores", new CrearMarcadorRequest(-34.5, -58.5, null))).Content.ReadFromJsonAsync<MarcadorDto>())!;
+        var obs = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores/{marcador.Id}/observaciones", new CrearObservacionRequest(null))).Content.ReadFromJsonAsync<ObservacionDto>())!;
+
+        using var form = FormularioFoto(new byte[] { 1, 2, 3 }, "image/png", new Dictionary<string, string>());
+        var subida = await c.PostAsync($"/api/v1/relevamientos/{rel.Id}/observaciones/{obs.Id}/fotos", form);
+        subida.StatusCode.Should().Be(HttpStatusCode.Created);
+        var foto = (await subida.Content.ReadFromJsonAsync<FotoDto>())!;
+        foto.PendienteUbicacion.Should().BeTrue();
+        foto.Latitud.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Archivo_no_imagen_415()
+    {
+        var c = _fabrica.CreateClient();
+        var (tokenJa, _, _) = await CrearJerarquiaAsync(c);
+
+        Con(c, tokenJa);
+        var rel = (await (await c.PostAsJsonAsync("/api/v1/relevamientos", new CrearRelevamientoRequest("Tramo Ruta 6", "Ruta 6"))).Content.ReadFromJsonAsync<RelevamientoDto>())!;
+        var marcador = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores", new CrearMarcadorRequest(-34.5, -58.5, null))).Content.ReadFromJsonAsync<MarcadorDto>())!;
+        var obs = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores/{marcador.Id}/observaciones", new CrearObservacionRequest(null))).Content.ReadFromJsonAsync<ObservacionDto>())!;
+
+        using var form = FormularioFoto(new byte[] { 1, 2, 3 }, "application/pdf", new Dictionary<string, string>());
+        var subida = await c.PostAsync($"/api/v1/relevamientos/{rel.Id}/observaciones/{obs.Id}/fotos", form);
+        subida.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+    }
 }

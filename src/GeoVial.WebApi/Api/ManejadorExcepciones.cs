@@ -43,6 +43,9 @@ public sealed class ManejadorExcepciones(IProblemDetailsService problemDetailsSe
         RelevamientoNoEncontradoException e => (StatusCodes.Status404NotFound, e.Codigo),
         MarcadorNoEncontradoException e => (StatusCodes.Status404NotFound, e.Codigo),
         EtiquetaNoEncontradaException e => (StatusCodes.Status404NotFound, e.Codigo),
+        ObservacionNoEncontradaException e => (StatusCodes.Status404NotFound, e.Codigo),
+        FotoNoEncontradaException e => (StatusCodes.Status404NotFound, e.Codigo),
+        TipoArchivoInvalidoException e => (StatusCodes.Status415UnsupportedMediaType, e.Codigo),
         TransicionEstadoInvalidaException e => (StatusCodes.Status409Conflict, e.Codigo),
         RelevamientoCerradoException e => (StatusCodes.Status409Conflict, e.Codigo),
         MarcadorConObservacionesException e => (StatusCodes.Status409Conflict, e.Codigo),
@@ -61,6 +64,7 @@ public sealed class ManejadorExcepciones(IProblemDetailsService problemDetailsSe
         404 => "Recurso no encontrado",
         409 => "Conflicto",
         413 => "Contenido demasiado grande",
+        415 => "Tipo de contenido no admitido",
         400 => "Solicitud inválida",
         _ => "Error interno",
     };

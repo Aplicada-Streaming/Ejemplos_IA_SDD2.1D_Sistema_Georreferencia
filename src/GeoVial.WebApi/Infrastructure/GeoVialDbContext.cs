@@ -81,5 +81,24 @@ public sealed class GeoVialDbContext(DbContextOptions<GeoVialDbContext> options)
         etiquetaMarcador.HasKey(em => new { em.EtiquetaId, em.MarcadorId });
         etiquetaMarcador.HasOne<Etiqueta>().WithMany().HasForeignKey(em => em.EtiquetaId).OnDelete(DeleteBehavior.Cascade);
         etiquetaMarcador.HasOne<MarcadorGeografico>().WithMany().HasForeignKey(em => em.MarcadorId).OnDelete(DeleteBehavior.Restrict);
+
+        var foto = modelBuilder.Entity<Foto>();
+        foto.ToTable("fotos");
+        foto.HasKey(f => f.Id);
+        foto.Property(f => f.ReferenciaAlmacen).IsRequired().HasMaxLength(512);
+        foto.Property(f => f.ContentType).IsRequired().HasMaxLength(100);
+        foto.Property(f => f.PendienteUbicacion).IsRequired();
+        foto.Property(f => f.FechaCreacion).IsRequired();
+        foto.HasIndex(f => f.ObservacionId);
+        foto.HasOne<Observacion>().WithMany().HasForeignKey(f => f.ObservacionId).OnDelete(DeleteBehavior.Cascade);
+
+        var comentario = modelBuilder.Entity<Comentario>();
+        comentario.ToTable("comentarios");
+        comentario.HasKey(co => co.Id);
+        comentario.Property(co => co.Texto).IsRequired().HasMaxLength(1000);
+        comentario.Property(co => co.FechaCreacion).IsRequired();
+        // A lo sumo un comentario por foto (cardinalidad 1—0..1).
+        comentario.HasIndex(co => co.FotoId).IsUnique();
+        comentario.HasOne<Foto>().WithMany().HasForeignKey(co => co.FotoId).OnDelete(DeleteBehavior.Cascade);
     }
 }

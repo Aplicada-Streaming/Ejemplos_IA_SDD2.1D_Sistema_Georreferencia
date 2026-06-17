@@ -191,6 +191,68 @@ public sealed class EtiquetaMarcador
     }
 }
 
+/// <summary>
+/// Foto de una observación (F2). El binario vive en el almacén de archivos vía la librería
+/// de almacenamiento; aquí se guarda solo la referencia lógica (ADR-09). La ubicación se
+/// resuelve priorizando la coordenada incrustada en la imagen sobre la asignada manualmente
+/// (RN-04); si no hay ninguna, queda pendiente de ubicación.
+/// </summary>
+public sealed class Foto
+{
+    public Guid Id { get; private set; } = Guid.NewGuid();
+    public Guid ObservacionId { get; private set; }
+    public string ReferenciaAlmacen { get; private set; } = string.Empty;
+    public string ContentType { get; private set; } = "application/octet-stream";
+    public double? Latitud { get; private set; }
+    public double? Longitud { get; private set; }
+    public bool PendienteUbicacion { get; private set; }
+    public DateTimeOffset FechaCreacion { get; private set; } = DateTimeOffset.UtcNow;
+
+    private Foto() { }
+
+    public Foto(Guid observacionId, string referenciaAlmacen, string contentType, double? latitud, double? longitud)
+    {
+        if (latitud is { } la and (< -90 or > 90))
+        {
+            throw new ArgumentOutOfRangeException(nameof(latitud), "La latitud debe estar entre -90 y 90.");
+        }
+
+        if (longitud is { } lo and (< -180 or > 180))
+        {
+            throw new ArgumentOutOfRangeException(nameof(longitud), "La longitud debe estar entre -180 y 180.");
+        }
+
+        ObservacionId = observacionId;
+        ReferenciaAlmacen = referenciaAlmacen;
+        ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType;
+        Latitud = latitud;
+        Longitud = longitud;
+        PendienteUbicacion = latitud is null || longitud is null;
+    }
+}
+
+/// <summary>Texto que describe una foto; a lo sumo uno por foto (cardinalidad 1—0..1).</summary>
+public sealed class Comentario
+{
+    public Guid Id { get; private set; } = Guid.NewGuid();
+    public Guid FotoId { get; private set; }
+    public string Texto { get; private set; } = string.Empty;
+    public DateTimeOffset FechaCreacion { get; private set; } = DateTimeOffset.UtcNow;
+
+    private Comentario() { }
+
+    public Comentario(Guid fotoId, string texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto))
+        {
+            throw new ArgumentException("El comentario no puede estar vacío.", nameof(texto));
+        }
+
+        FotoId = fotoId;
+        Texto = texto.Trim();
+    }
+}
+
 /// <summary>Asignación de un agente de campo a un relevamiento.</summary>
 public sealed class AsignacionAgente
 {

@@ -1,5 +1,3 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 using GeoVial.WebApi.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,7 +12,7 @@ namespace GeoVial.WebApi.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/v1/relevamientos")]
-public sealed class RelevamientosController(IServicioRelevamientos servicio) : ControllerBase
+public sealed class RelevamientosController(IServicioRelevamientos servicio) : ControladorAutenticado
 {
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<RelevamientoDto>), StatusCodes.Status200OK)]
@@ -117,13 +115,5 @@ public sealed class RelevamientosController(IServicioRelevamientos servicio) : C
     {
         await servicio.QuitarEtiquetaMarcadorAsync(IdUsuarioActual(), id, idMarcador, idEtiqueta, ct);
         return NoContent();
-    }
-
-    private Guid IdUsuarioActual()
-    {
-        var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
-        return Guid.TryParse(sub, out var id)
-            ? id
-            : throw new OperacionNoAutorizadaException("El token no identifica a un usuario válido.");
     }
 }

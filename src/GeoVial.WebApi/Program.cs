@@ -40,6 +40,7 @@ builder.Services.AddSingleton<IEmisorTokens, EmisorTokensJwt>();
 builder.Services.AddScoped<IServicioUsuarios, ServicioUsuarios>();
 builder.Services.AddScoped<IServicioAutenticacion, ServicioAutenticacion>();
 builder.Services.AddScoped<IServicioRelevamientos, ServicioRelevamientos>();
+builder.Services.AddScoped<IServicioFotos, ServicioFotos>();
 
 // --- Autenticación por token bearer ---
 // La validación se configura desde el mismo OpcionesToken que usa el emisor (IOptions),
