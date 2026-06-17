@@ -71,9 +71,74 @@
 
     <div @ref="_mapaElemento" style="height: 480px; width: 100%; border-radius: 4px;"></div>
 
-    <MudText Typo="Typo.h6" Class="mt-6 mb-2">Marcadores (@_marcadores.Count)</MudText>
+    <div class="d-flex align-center gap-4 mt-6 mb-2 flex-wrap">
+        <MudText Typo="Typo.h6">Marcadores (@MarcadoresVisibles.Count@(_filtroEtiqueta is null ? "" : $" de {_marcadores.Count}"))</MudText>
+        <MudSpacer />
+        @if (EtiquetasDisponibles.Count > 0)
+        {
+            <MudSelect T="string" Value="_filtroEtiqueta" ValueChanged="CambiarFiltroAsync" Label="Filtrar por etiqueta"
+                       Clearable="true" Dense="true" Style="max-width: 220px;">
+                @foreach (var et in EtiquetasDisponibles)
+                {
+                    <MudSelectItem T="string" Value="@et">@et</MudSelectItem>
+                }
+            </MudSelect>
+        }
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Collections"
+                   OnClick="IniciarRevisionAsync" Disabled="@(MarcadoresVisibles.Count == 0)">Revisar (carrusel)</MudButton>
+    </div>
+
+    @if (_modoRevision && MarcadorActual is { } actual)
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <div class="d-flex align-center mb-2">
+                <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="AnteriorMarcadorAsync" Disabled="@(MarcadoresVisibles.Count <= 1)" />
+                <MudText Typo="Typo.subtitle1" Class="mx-2">Marcador @(_indiceRevision + 1) de @MarcadoresVisibles.Count</MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="SiguienteMarcadorAsync" Disabled="@(MarcadoresVisibles.Count <= 1)" />
+                <MudSpacer />
+                <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="@(() => _modoRevision = false)" />
+            </div>
+
+            <MudText Typo="Typo.body1">@(string.IsNullOrWhiteSpace(actual.Descripcion) ? "(sin descripción)" : actual.Descripcion)</MudText>
+            <div class="mb-2">
+                @foreach (var et in actual.Etiquetas)
+                {
+                    <MudChip T="string" Size="Size.Small" Class="ma-1">@et</MudChip>
+                }
+                @if (_marcadoresEnConflicto.Contains(actual.Id))
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Icon="@Icons.Material.Filled.Warning">En conflicto</MudChip>
+                }
+            </div>
+
+            @if (_cargandoFotos)
+            {
+                <MudProgressLinear Indeterminate="true" />
+            }
+            else if (_fotos.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">Este marcador no tiene fotos.</MudAlert>
+            }
+            else if (FotoActual is { } foto)
+            {
+                <div class="d-flex flex-column align-center">
+                    @if (_imagenes.TryGetValue(foto.Id, out var uri))
+                    {
+                        <MudImage Src="@uri" Height="320" ObjectFit="ObjectFit.Contain" Class="rounded" />
+                    }
+                    <MudText Typo="Typo.body2" Class="mt-2">@(string.IsNullOrWhiteSpace(foto.Comentario) ? "(sin comentario)" : foto.Comentario)</MudText>
+                    <div class="d-flex align-center mt-1">
+                        <MudIconButton Icon="@Icons.Material.Filled.ArrowBackIos" Size="Size.Small" OnClick="FotoAnterior" Disabled="@(_fotos.Count <= 1)" />
+                        <MudText Typo="Typo.caption" Class="mx-2">Foto @(_indiceFoto + 1) de @_fotos.Count</MudText>
+                        <MudIconButton Icon="@Icons.Material.Filled.ArrowForwardIos" Size="Size.Small" OnClick="FotoSiguiente" Disabled="@(_fotos.Count <= 1)" />
+                    </div>
+                </div>
+            }
+        </MudPaper>
+    }
+
     <MudPaper Elevation="1">
-        <MudTable Items="_marcadores" Hover="true" Dense="true">
+        <MudTable Items="MarcadoresVisibles" Hover="true" Dense="true">
             <HeaderContent>
                 <MudTh>Latitud</MudTh>
                 <MudTh>Longitud</MudTh>
@@ -169,6 +234,27 @@ else if (_cargado)
     private IReadOnlyList<FotoDto> _fotos = [];
     private readonly Dictionary<Guid, string> _imagenes = [];
     private bool _cargandoFotos;
+
+    // Revisión (CU-12): filtro por etiqueta, encadenado de marcadores y carrusel de fotos.
+    private string? _filtroEtiqueta;
+    private HashSet<Guid> _marcadoresEnConflicto = [];
+    private bool _modoRevision;
+    private int _indiceRevision;
+    private int _indiceFoto;
+
+    private IReadOnlyList<string> EtiquetasDisponibles
+        => _marcadores.SelectMany(m => m.Etiquetas).Distinct().OrderBy(e => e).ToList();
+
+    private IReadOnlyList<MarcadorDto> MarcadoresVisibles
+        => _filtroEtiqueta is null
+            ? _marcadores
+            : _marcadores.Where(m => m.Etiquetas.Contains(_filtroEtiqueta)).ToList();
+
+    private MarcadorDto? MarcadorActual
+        => _indiceRevision >= 0 && _indiceRevision < MarcadoresVisibles.Count ? MarcadoresVisibles[_indiceRevision] : null;
+
+    private FotoDto? FotoActual
+        => _indiceFoto >= 0 && _indiceFoto < _fotos.Count ? _fotos[_indiceFoto] : null;
 
     private ElementReference _mapaElemento;
     private IJSObjectReference? _modulo;
@@ -303,8 +389,14 @@ else if (_cargado)
     private async Task VerFotosAsync(Guid idMarcador)
     {
         _marcadorFotos = idMarcador;
+        await CargarFotosDeMarcadorAsync(idMarcador);
+    }
+
+    private async Task CargarFotosDeMarcadorAsync(Guid idMarcador)
+    {
         _fotos = [];
         _imagenes.Clear();
+        _indiceFoto = 0;
         _cargandoFotos = true;
         try
         {
@@ -325,6 +417,78 @@ else if (_cargado)
         }
     }
 
+    // ---- Revisión sobre mapa con carrusel (CU-12) ----
+
+    private async Task IniciarRevisionAsync()
+    {
+        if (MarcadoresVisibles.Count == 0)
+        {
+            return;
+        }
+
+        _modoRevision = true;
+        _indiceRevision = 0;
+        await CargarFotosRevisionAsync();
+    }
+
+    private async Task AnteriorMarcadorAsync()
+    {
+        var total = MarcadoresVisibles.Count;
+        if (total == 0)
+        {
+            return;
+        }
+
+        _indiceRevision = (_indiceRevision - 1 + total) % total;
+        await CargarFotosRevisionAsync();
+    }
+
+    private async Task SiguienteMarcadorAsync()
+    {
+        var total = MarcadoresVisibles.Count;
+        if (total == 0)
+        {
+            return;
+        }
+
+        _indiceRevision = (_indiceRevision + 1) % total;
+        await CargarFotosRevisionAsync();
+    }
+
+    private async Task CargarFotosRevisionAsync()
+    {
+        if (MarcadorActual is { } marcador)
+        {
+            await CargarFotosDeMarcadorAsync(marcador.Id);
+        }
+    }
+
+    private void FotoAnterior()
+    {
+        if (_fotos.Count > 0)
+        {
+            _indiceFoto = (_indiceFoto - 1 + _fotos.Count) % _fotos.Count;
+        }
+    }
+
+    private void FotoSiguiente()
+    {
+        if (_fotos.Count > 0)
+        {
+            _indiceFoto = (_indiceFoto + 1) % _fotos.Count;
+        }
+    }
+
+    private async Task CambiarFiltroAsync(string? etiqueta)
+    {
+        _filtroEtiqueta = etiqueta;
+        _indiceRevision = 0;
+        if (_modoRevision)
+        {
+            await CargarFotosRevisionAsync();
+        }
+    }
+
     private async Task RecargarConflictosAsync()
     {
         if (!_esJefe)
@@ -341,6 +505,8 @@ else if (_cargado)
             // Los conflictos son complementarios; si no hay acceso, no se interrumpe la vista.
             _conflictos = [];
         }
+
+        _marcadoresEnConflicto = _conflictos.SelectMany(c => c.Marcadores).Select(m => m.Id).ToHashSet();
     }
 
     private async Task ReinicializarMapaAsync()
