@@ -38,12 +38,21 @@
                 <MudTh>Latitud</MudTh>
                 <MudTh>Longitud</MudTh>
                 <MudTh>Descripción</MudTh>
+                <MudTh>Observaciones</MudTh>
+                <MudTh>Etiquetas</MudTh>
                 <MudTh>Creado</MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd DataLabel="Latitud">@context.Latitud.ToString("0.00000")</MudTd>
                 <MudTd DataLabel="Longitud">@context.Longitud.ToString("0.00000")</MudTd>
                 <MudTd DataLabel="Descripción">@context.Descripcion</MudTd>
+                <MudTd DataLabel="Observaciones">@context.CantidadObservaciones</MudTd>
+                <MudTd DataLabel="Etiquetas">
+                    @foreach (var etiqueta in context.Etiquetas)
+                    {
+                        <MudChip T="string" Size="Size.Small" Class="ma-1">@etiqueta</MudChip>
+                    }
+                </MudTd>
                 <MudTd DataLabel="Creado">@context.FechaCreacion.ToString("yyyy-MM-dd HH:mm")</MudTd>
             </RowTemplate>
             <NoRecordsContent>

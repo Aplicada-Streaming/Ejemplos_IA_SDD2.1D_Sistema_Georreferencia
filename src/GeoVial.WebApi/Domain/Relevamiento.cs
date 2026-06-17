@@ -97,6 +97,26 @@ public sealed class MarcadorGeografico
 
     public MarcadorGeografico(Guid relevamientoId, double latitud, double longitud, string? descripcion)
     {
+        ValidarCoordenada(latitud, longitud);
+        RelevamientoId = relevamientoId;
+        Latitud = latitud;
+        Longitud = longitud;
+        Descripcion = string.IsNullOrWhiteSpace(descripcion) ? null : descripcion.Trim();
+    }
+
+    /// <summary>
+    /// Reubica el marcador conservando su identidad (RC-01): el <see cref="Id"/> no cambia,
+    /// de modo que las observaciones y etiquetas ancladas siguen vigentes tras el movimiento.
+    /// </summary>
+    public void Mover(double latitud, double longitud)
+    {
+        ValidarCoordenada(latitud, longitud);
+        Latitud = latitud;
+        Longitud = longitud;
+    }
+
+    private static void ValidarCoordenada(double latitud, double longitud)
+    {
         if (latitud is < -90 or > 90)
         {
             throw new ArgumentOutOfRangeException(nameof(latitud), "La latitud debe estar entre -90 y 90.");
@@ -106,11 +126,68 @@ public sealed class MarcadorGeografico
         {
             throw new ArgumentOutOfRangeException(nameof(longitud), "La longitud debe estar entre -180 y 180.");
         }
+    }
+}
+
+/// <summary>
+/// Observación anclada a un marcador geográfico (RC-02): registra el estado de un punto del
+/// tramo con una nota y un autor identificado. Un marcador es compartible por varias
+/// observaciones (relación 1—0..N del modelo conceptual).
+/// </summary>
+public sealed class Observacion
+{
+    public Guid Id { get; private set; } = Guid.NewGuid();
+    public Guid MarcadorId { get; private set; }
+    public Guid AutorId { get; private set; }
+    public string? Nota { get; private set; }
+    public DateTimeOffset FechaCreacion { get; private set; } = DateTimeOffset.UtcNow;
+
+    private Observacion() { }
+
+    public Observacion(Guid marcadorId, Guid autorId, string? nota)
+    {
+        MarcadorId = marcadorId;
+        AutorId = autorId;
+        Nota = string.IsNullOrWhiteSpace(nota) ? null : nota.Trim();
+    }
+}
+
+/// <summary>
+/// Etiqueta reutilizable dentro de un relevamiento, aplicable a marcadores (y, en F2, a
+/// fotos) para clasificarlos y filtrarlos en la revisión. Su nombre es único por relevamiento.
+/// </summary>
+public sealed class Etiqueta
+{
+    public Guid Id { get; private set; } = Guid.NewGuid();
+    public Guid RelevamientoId { get; private set; }
+    public string Nombre { get; private set; } = string.Empty;
+
+    private Etiqueta() { }
+
+    public Etiqueta(Guid relevamientoId, string nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre))
+        {
+            throw new ArgumentException("El nombre de la etiqueta es obligatorio.", nameof(nombre));
+        }
 
         RelevamientoId = relevamientoId;
-        Latitud = latitud;
-        Longitud = longitud;
-        Descripcion = string.IsNullOrWhiteSpace(descripcion) ? null : descripcion.Trim();
+        Nombre = nombre.Trim();
+    }
+}
+
+/// <summary>Vínculo N—N entre una etiqueta y un marcador geográfico.</summary>
+public sealed class EtiquetaMarcador
+{
+    public Guid EtiquetaId { get; private set; }
+    public Guid MarcadorId { get; private set; }
+
+    private EtiquetaMarcador() { }
+
+    public EtiquetaMarcador(Guid etiquetaId, Guid marcadorId)
+    {
+        EtiquetaId = etiquetaId;
+        MarcadorId = marcadorId;
     }
 }
 

@@ -112,4 +112,64 @@ public sealed class RelevamientosTests(FabricaWebApi fabrica) : IClassFixture<Fa
         var transicion = await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/transicion", new CambiarEstadoRequest(EstadoRelevamiento.Cerrado));
         transicion.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
+
+    [Fact]
+    public async Task Marcador_con_observaciones_y_etiquetas_y_movimiento_conserva_identidad()
+    {
+        var c = _fabrica.CreateClient();
+        var (tokenJa, tokenAg, idAgente) = await CrearJerarquiaAsync(c);
+
+        // Jefe crea relevamiento, asigna al agente y crea un marcador.
+        Con(c, tokenJa);
+        var rel = (await (await c.PostAsJsonAsync("/api/v1/relevamientos", new CrearRelevamientoRequest("Tramo Ruta 11", "Ruta 11, puente sur"))).Content.ReadFromJsonAsync<RelevamientoDto>())!;
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/agentes", new AsignarAgenteRequest(idAgente))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var marcador = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores", new CrearMarcadorRequest(-34.6, -58.4, "Junta de dilatación"))).Content.ReadFromJsonAsync<MarcadorDto>())!;
+        marcador.CantidadObservaciones.Should().Be(0);
+        marcador.Etiquetas.Should().BeEmpty();
+
+        // Etiqueta del relevamiento y aplicación al marcador.
+        var etiqueta = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/etiquetas", new CrearEtiquetaRequest("fisura"))).Content.ReadFromJsonAsync<EtiquetaDto>())!;
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores/{marcador.Id}/etiquetas", new EtiquetarMarcadorRequest(etiqueta.Id)))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // El agente asignado registra una observación anclada al marcador (RC-02).
+        Con(c, tokenAg);
+        var obs = await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores/{marcador.Id}/observaciones", new CrearObservacionRequest("Fisura longitudinal de 30 cm"));
+        obs.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // El marcador listado refleja el conteo de observaciones y la etiqueta.
+        var lista = await c.GetFromJsonAsync<List<MarcadorDto>>($"/api/v1/relevamientos/{rel.Id}/marcadores");
+        var enLista = lista!.Single(m => m.Id == marcador.Id);
+        enLista.CantidadObservaciones.Should().Be(1);
+        enLista.Etiquetas.Should().Contain("fisura");
+
+        // RC-01: mover el marcador conserva su identidad (mismo Id, nuevas coordenadas).
+        Con(c, tokenJa);
+        var movido = (await (await c.PutAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores/{marcador.Id}", new MoverMarcadorRequest(-34.61, -58.41))).Content.ReadFromJsonAsync<MarcadorDto>())!;
+        movido.Id.Should().Be(marcador.Id);
+        movido.Latitud.Should().Be(-34.61);
+        movido.CantidadObservaciones.Should().Be(1);
+        movido.Etiquetas.Should().Contain("fisura");
+
+        // US-15 / RC-02: no se da de baja un marcador con observaciones.
+        var bajaConObs = await c.DeleteAsync($"/api/v1/relevamientos/{rel.Id}/marcadores/{marcador.Id}");
+        bajaConObs.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        // Un marcador sin observaciones sí se puede dar de baja.
+        var vacio = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores", new CrearMarcadorRequest(-34.62, -58.42, null))).Content.ReadFromJsonAsync<MarcadorDto>())!;
+        (await c.DeleteAsync($"/api/v1/relevamientos/{rel.Id}/marcadores/{vacio.Id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task Etiqueta_duplicada_en_relevamiento_409()
+    {
+        var c = _fabrica.CreateClient();
+        var (tokenJa, _, _) = await CrearJerarquiaAsync(c);
+
+        Con(c, tokenJa);
+        var rel = (await (await c.PostAsJsonAsync("/api/v1/relevamientos", new CrearRelevamientoRequest("Tramo Z", "Camino W"))).Content.ReadFromJsonAsync<RelevamientoDto>())!;
+
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/etiquetas", new CrearEtiquetaRequest("bache"))).StatusCode.Should().Be(HttpStatusCode.Created);
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/etiquetas", new CrearEtiquetaRequest("bache"))).StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
 }
