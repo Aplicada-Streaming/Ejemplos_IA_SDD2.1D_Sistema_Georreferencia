@@ -115,11 +115,12 @@ public sealed class LocalObjectStore : IObjectStore
 
     private static string NormalizeKey(string key)
     {
-        var trimmed = (key ?? string.Empty).Replace('\\', '/').Trim('/');
+        var original = key ?? string.Empty;
+        var trimmed = original.Replace('\\', '/').Trim('/');
         var segments = trimmed.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Any(s => s is "." or ".."))
         {
-            throw new InvalidObjectKeyException(key);
+            throw new InvalidObjectKeyException(original);
         }
 
         return string.Join('/', segments);

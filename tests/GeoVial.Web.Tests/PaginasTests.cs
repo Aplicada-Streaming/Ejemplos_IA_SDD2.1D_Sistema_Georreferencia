@@ -47,6 +47,16 @@ public sealed class PaginasTests : TestContext
         nav.Uri.Should().EndWith("/login");
     }
 
+    [Fact]
+    public void DetalleRelevamiento_sin_sesion_redirige_a_login()
+    {
+        RenderComponent<GeoVial.Web.Components.Pages.RelevamientoDetalle>(
+            p => p.Add(c => c.Id, Guid.NewGuid()));
+
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.Uri.Should().EndWith("/login");
+    }
+
     private sealed class HandlerVacio : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

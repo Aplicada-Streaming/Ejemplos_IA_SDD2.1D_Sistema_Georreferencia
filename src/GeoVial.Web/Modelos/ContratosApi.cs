@@ -52,6 +52,10 @@ public sealed record CrearRelevamientoRequest(string Nombre, string TramoVial);
 
 public sealed record CambiarEstadoRequest(EstadoRelevamiento NuevoEstado);
 
+public sealed record MarcadorDto(Guid Id, double Latitud, double Longitud, string? Descripcion, DateTimeOffset FechaCreacion);
+
+public sealed record CrearMarcadorRequest(double Latitud, double Longitud, string? Descripcion);
+
 public static class EstadoRelevamientoDescripcion
 {
     public static string Texto(this EstadoRelevamiento estado) => estado switch

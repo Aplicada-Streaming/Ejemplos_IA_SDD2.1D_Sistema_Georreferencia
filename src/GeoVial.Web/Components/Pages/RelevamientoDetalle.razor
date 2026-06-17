@@ -1,0 +1,170 @@
+@page "/relevamientos/{Id:guid}"
+@inject ClienteApi Api
+@inject EstadoSesion Sesion
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>Relevamiento — GeoVial</PageTitle>
+
+<MudButton Href="/relevamientos" StartIcon="@Icons.Material.Filled.ArrowBack" Variant="Variant.Text" Class="mb-4">
+    Volver a relevamientos
+</MudButton>
+
+@if (_relevamiento is { } rel)
+{
+    <MudText Typo="Typo.h4" Class="mb-1">@rel.Nombre</MudText>
+    <MudText Typo="Typo.subtitle1" Class="mb-4">
+        @rel.TramoVial — <MudChip T="string" Size="Size.Small">@rel.Estado.Texto()</MudChip>
+    </MudText>
+
+    @if (_puedeEditar)
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="1">
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Hacé clic en el mapa para agregar un marcador con esta descripción:
+            </MudText>
+            <MudTextField @bind-Value="_descripcionNueva" Label="Descripción del marcador" Variant="Variant.Outlined" />
+        </MudPaper>
+    }
+
+    <div @ref="_mapaElemento" style="height: 480px; width: 100%; border-radius: 4px;"></div>
+
+    <MudText Typo="Typo.h6" Class="mt-6 mb-2">Marcadores (@_marcadores.Count)</MudText>
+    <MudPaper Elevation="1">
+        <MudTable Items="_marcadores" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>Latitud</MudTh>
+                <MudTh>Longitud</MudTh>
+                <MudTh>Descripción</MudTh>
+                <MudTh>Creado</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Latitud">@context.Latitud.ToString("0.00000")</MudTd>
+                <MudTd DataLabel="Longitud">@context.Longitud.ToString("0.00000")</MudTd>
+                <MudTd DataLabel="Descripción">@context.Descripcion</MudTd>
+                <MudTd DataLabel="Creado">@context.FechaCreacion.ToString("yyyy-MM-dd HH:mm")</MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText>Todavía no hay marcadores.</MudText>
+            </NoRecordsContent>
+        </MudTable>
+    </MudPaper>
+}
+else if (_cargado)
+{
+    <MudAlert Severity="Severity.Warning">No se encontró el relevamiento o no tenés acceso.</MudAlert>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private RelevamientoDto? _relevamiento;
+    private IReadOnlyList<MarcadorDto> _marcadores = [];
+    private string _descripcionNueva = string.Empty;
+    private bool _cargado;
+    private bool _puedeEditar;
+
+    private ElementReference _mapaElemento;
+    private IJSObjectReference? _modulo;
+    private DotNetObjectReference<RelevamientoDetalle>? _refDotNet;
+    private bool _mapaInicializado;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Sesion.EstaAutenticado)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        try
+        {
+            var relevamientos = await Api.ListarRelevamientosAsync();
+            _relevamiento = relevamientos.FirstOrDefault(r => r.Id == Id);
+            if (_relevamiento is { } rel)
+            {
+                _puedeEditar = Sesion.Usuario!.Rol == Rol.JefeDeArea && rel.Estado != EstadoRelevamiento.Cerrado;
+                _marcadores = await Api.ListarMarcadoresAsync(Id);
+            }
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _cargado = true;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_mapaInicializado || _relevamiento is null || !Sesion.EstaAutenticado)
+        {
+            return;
+        }
+
+        _modulo ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/mapa.js");
+        _refDotNet ??= DotNetObjectReference.Create(this);
+
+        var pines = _marcadores
+            .Select(m => new { latitud = m.Latitud, longitud = m.Longitud, descripcion = m.Descripcion })
+            .ToArray();
+
+        // Centro por defecto: Buenos Aires con zoom amplio si no hay marcadores aún.
+        double lat = pines.Length > 0 ? pines[0].latitud : -34.6037;
+        double lng = pines.Length > 0 ? pines[0].longitud : -58.3816;
+        int zoom = pines.Length > 0 ? 13 : 6;
+
+        await _modulo.InvokeVoidAsync("inicializar", _mapaElemento, _puedeEditar ? _refDotNet : null, lat, lng, zoom, pines);
+        _mapaInicializado = true;
+    }
+
+    [JSInvokable]
+    public async Task AlHacerClicEnMapa(double lat, double lng)
+    {
+        if (!_puedeEditar)
+        {
+            return;
+        }
+
+        try
+        {
+            var creado = await Api.CrearMarcadorAsync(Id, new CrearMarcadorRequest(lat, lng, EsVacio(_descripcionNueva) ? null : _descripcionNueva.Trim()));
+            _marcadores = [.. _marcadores, creado];
+            if (_modulo is not null)
+            {
+                await _modulo.InvokeVoidAsync("agregarMarcador", _mapaElemento, creado.Latitud, creado.Longitud, creado.Descripcion);
+            }
+
+            Snackbar.Add("Marcador agregado.", Severity.Success);
+            StateHasChanged();
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private static bool EsVacio(string? s) => string.IsNullOrWhiteSpace(s);
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_modulo is not null)
+            {
+                await _modulo.InvokeVoidAsync("destruir", _mapaElemento);
+                await _modulo.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // El circuito ya se cerró; no hay nada que limpiar del lado del navegador.
+        }
+
+        _refDotNet?.Dispose();
+    }
+}
