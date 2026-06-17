@@ -1,0 +1,28 @@
+# Imagen de contenedor del backend GeoVial.WebApi (rest-api).
+# Build multi-stage: SDK .NET 8 para compilar/publicar, runtime ASP.NET 8 para ejecutar.
+# Contexto de build: la raíz del repositorio. Uso:
+#   docker build -f deploy/Dockerfile.webapi -t geovial-webapi:dev .
+
+# --- Etapa de build ---
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# Restore por capas (mejor caché): primero los csproj y global.json.
+COPY global.json ./
+COPY src/GeoVial.Storage/GeoVial.Storage.csproj src/GeoVial.Storage/
+COPY src/GeoVial.WebApi/GeoVial.WebApi.csproj src/GeoVial.WebApi/
+RUN dotnet restore src/GeoVial.WebApi/GeoVial.WebApi.csproj
+
+# Luego el código y publicación.
+COPY src/ src/
+RUN dotnet publish src/GeoVial.WebApi/GeoVial.WebApi.csproj -c Release -o /app/publish /p:UseAppHost=false
+
+# --- Etapa de runtime ---
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+WORKDIR /app
+COPY --from=build /app/publish ./
+
+# El proveedor de persistencia y la clave del token se inyectan por configuración/entorno.
+ENV ASPNETCORE_HTTP_PORTS=8080
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "GeoVial.WebApi.dll"]

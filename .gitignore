@@ -11,6 +11,13 @@
 *.sln.docstates
 *.env
 
+# Artefactos de runtime y de build de GeoVial (no versionar)
+*.db
+*.db-shm
+*.db-wal
+storage-data/
+artifacts/
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 

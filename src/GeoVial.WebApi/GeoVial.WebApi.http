@@ -1,0 +1,6 @@
+@GeoVial.WebApi_HostAddress = http://localhost:5076
+
+GET {{GeoVial.WebApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
