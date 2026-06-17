@@ -1,0 +1,99 @@
+@page "/relevamientos"
+@using GeoVial.Mobile.Servicios
+@inject ClienteApi Api
+@inject EstadoSesion Sesion
+@inject NavigationManager Nav
+
+<PageTitle>Relevamientos — GeoVial</PageTitle>
+
+@if (Sesion.EstaAutenticado)
+{
+    <div class="d-flex justify-space-between align-center mb-2">
+        <MudText Typo="Typo.h5">Mis relevamientos</MudText>
+        <MudIconButton Icon="@Icons.Material.Filled.Logout" OnClick="CerrarSesion" Title="Cerrar sesión" />
+    </div>
+    <MudText Typo="Typo.body2" Class="mb-4">@Sesion.Usuario!.NombreUsuario — @Sesion.Usuario!.Rol.Texto()</MudText>
+
+    @if (_cargando)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-3">@_error</MudAlert>
+        <MudButton Variant="Variant.Outlined" OnClick="RecargarAsync">Reintentar</MudButton>
+    }
+    else if (_relevamientos.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">No tenés relevamientos asignados todavía.</MudAlert>
+    }
+    else
+    {
+        <MudList T="RelevamientoDto" Dense="false">
+            @foreach (var rel in _relevamientos)
+            {
+                <MudListItem T="RelevamientoDto" Icon="@Icons.Material.Filled.Map">
+                    <MudText Typo="Typo.subtitle1">@rel.Nombre</MudText>
+                    <MudText Typo="Typo.body2">@rel.TramoVial</MudText>
+                    <div class="mt-1">
+                        <MudChip T="string" Size="Size.Small" Color="@ColorEstado(rel.Estado)">@rel.Estado.Texto()</MudChip>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@rel.CantidadMarcadores marcadores</MudChip>
+                    </div>
+                </MudListItem>
+            }
+        </MudList>
+    }
+}
+
+@code {
+    private IReadOnlyList<RelevamientoDto> _relevamientos = [];
+    private bool _cargando = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Sesion.EstaAutenticado)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        await RecargarAsync();
+    }
+
+    private async Task RecargarAsync()
+    {
+        _cargando = true;
+        _error = null;
+        try
+        {
+            _relevamientos = await Api.ListarRelevamientosAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception)
+        {
+            _error = "No se pudo conectar con el servidor de la API.";
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private void CerrarSesion()
+    {
+        Sesion.Cerrar();
+        Nav.NavigateTo("/login");
+    }
+
+    private static Color ColorEstado(EstadoRelevamiento estado) => estado switch
+    {
+        EstadoRelevamiento.Recoleccion => Color.Info,
+        EstadoRelevamiento.Revision => Color.Warning,
+        EstadoRelevamiento.Cerrado => Color.Success,
+        _ => Color.Default,
+    };
+}
