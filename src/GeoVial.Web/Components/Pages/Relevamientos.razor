@@ -49,6 +49,8 @@
             <MudTd DataLabel="Agentes">@context.CantidadAgentes</MudTd>
             <MudTd DataLabel="Creado">@context.FechaCreacion.ToString("yyyy-MM-dd")</MudTd>
             <MudTd>
+                <MudButton Size="Size.Small" Color="Color.Default" Variant="Variant.Text"
+                           Href="@($"/relevamientos/{context.Id}")">Ver mapa</MudButton>
                 @if (_esJefeArea && context.Estado.Siguiente() is { } siguiente)
                 {
                     <MudButton Size="Size.Small" Color="Color.Primary" Variant="Variant.Text"

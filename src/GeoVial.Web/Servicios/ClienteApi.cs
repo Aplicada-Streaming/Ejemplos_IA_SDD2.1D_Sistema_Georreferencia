@@ -73,6 +73,23 @@ public sealed class ClienteApi(HttpClient http, EstadoSesion sesion)
         return (await resp.Content.ReadFromJsonAsync<RelevamientoDto>(ct))!;
     }
 
+    public async Task<IReadOnlyList<MarcadorDto>> ListarMarcadoresAsync(Guid idRelevamiento, CancellationToken ct = default)
+    {
+        using var req = Autorizado(HttpMethod.Get, $"api/v1/relevamientos/{idRelevamiento}/marcadores");
+        using var resp = await http.SendAsync(req, ct);
+        await GarantizarExitoAsync(resp, ct);
+        return (await resp.Content.ReadFromJsonAsync<List<MarcadorDto>>(ct)) ?? [];
+    }
+
+    public async Task<MarcadorDto> CrearMarcadorAsync(Guid idRelevamiento, CrearMarcadorRequest solicitud, CancellationToken ct = default)
+    {
+        using var req = Autorizado(HttpMethod.Post, $"api/v1/relevamientos/{idRelevamiento}/marcadores");
+        req.Content = JsonContent.Create(solicitud);
+        using var resp = await http.SendAsync(req, ct);
+        await GarantizarExitoAsync(resp, ct);
+        return (await resp.Content.ReadFromJsonAsync<MarcadorDto>(ct))!;
+    }
+
     private HttpRequestMessage Autorizado(HttpMethod metodo, string ruta)
     {
         var req = new HttpRequestMessage(metodo, ruta);
