@@ -37,6 +37,7 @@ public sealed class GeoVialDbContext(DbContextOptions<GeoVialDbContext> options)
         relevamiento.Property(r => r.Estado).HasConversion<int>().IsRequired();
         relevamiento.Property(r => r.IdJefeArea).IsRequired();
         relevamiento.Property(r => r.FechaCreacion).IsRequired();
+        relevamiento.Property(r => r.CerradoEn);
         relevamiento.HasOne<Usuario>().WithMany().HasForeignKey(r => r.IdJefeArea).OnDelete(DeleteBehavior.Restrict);
         relevamiento.HasMany(r => r.Marcadores).WithOne().HasForeignKey(m => m.RelevamientoId).OnDelete(DeleteBehavior.Cascade);
         relevamiento.HasMany(r => r.Asignaciones).WithOne().HasForeignKey(a => a.RelevamientoId).OnDelete(DeleteBehavior.Cascade);
@@ -107,6 +108,22 @@ public sealed class GeoVialDbContext(DbContextOptions<GeoVialDbContext> options)
         // A lo sumo un comentario por foto (cardinalidad 1—0..1).
         comentario.HasIndex(co => co.FotoId).IsUnique();
         comentario.HasOne<Foto>().WithMany().HasForeignKey(co => co.FotoId).OnDelete(DeleteBehavior.Cascade);
+
+        var conflicto = modelBuilder.Entity<ConflictoMarcadores>();
+        conflicto.ToTable("conflictos_marcadores");
+        conflicto.HasKey(co => co.Id);
+        conflicto.Property(co => co.Estado).HasConversion<int>().IsRequired();
+        conflicto.Property(co => co.Resolucion).HasConversion<int?>();
+        conflicto.Property(co => co.DetectadoEn).IsRequired();
+        conflicto.HasIndex(co => new { co.RelevamientoId, co.Estado });
+        conflicto.HasOne<Relevamiento>().WithMany().HasForeignKey(co => co.RelevamientoId).OnDelete(DeleteBehavior.Cascade);
+
+        var conflictoMiembro = modelBuilder.Entity<ConflictoMarcadorMiembro>();
+        conflictoMiembro.ToTable("conflictos_marcador_miembro");
+        conflictoMiembro.HasKey(cm => new { cm.ConflictoId, cm.MarcadorId });
+        conflictoMiembro.HasIndex(cm => cm.MarcadorId);
+        conflictoMiembro.HasOne<ConflictoMarcadores>().WithMany().HasForeignKey(cm => cm.ConflictoId).OnDelete(DeleteBehavior.Cascade);
+        conflictoMiembro.HasOne<MarcadorGeografico>().WithMany().HasForeignKey(cm => cm.MarcadorId).OnDelete(DeleteBehavior.Restrict);
 
         var marca = modelBuilder.Entity<MarcaSincronizacion>();
         marca.ToTable("marcas_sincronizacion");

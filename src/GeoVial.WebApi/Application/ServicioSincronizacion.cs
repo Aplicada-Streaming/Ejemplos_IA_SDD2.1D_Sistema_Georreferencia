@@ -12,9 +12,6 @@ namespace GeoVial.WebApi.Application;
 /// </summary>
 public sealed class ServicioSincronizacion(GeoVialDbContext db) : IServicioSincronizacion
 {
-    /// <summary>Radio de agrupación/conflicto de marcadores, en metros (RN-03/RN-04).</summary>
-    private const double RadioConflictoMetros = 30.0;
-
     public async Task<ResultadoSubida> SubirAsync(Guid idAgente, Guid idRelevamiento, LoteSincronizacion lote, CancellationToken ct = default)
     {
         var rel = await CargarAsignadoAsync(idAgente, idRelevamiento, ct);
@@ -34,11 +31,10 @@ public sealed class ServicioSincronizacion(GeoVialDbContext db) : IServicioSincr
         var marcadorPorOrigen = existentes
             .Where(m => m.IdOrigen is not null)
             .ToDictionary(m => m.IdOrigen!, m => m.Id);
-        var coordenadas = existentes.Select(m => (m.Latitud, m.Longitud)).ToList();
 
         var aplicados = 0;
         var reenviados = 0;
-        var conflictos = 0;
+        var nuevos = new List<(Guid Id, double Lat, double Lng)>();
 
         foreach (var cambio in lote.Marcadores)
         {
@@ -51,13 +47,7 @@ public sealed class ServicioSincronizacion(GeoVialDbContext db) : IServicioSincr
             var marcador = new MarcadorGeografico(idRelevamiento, cambio.Latitud, cambio.Longitud, cambio.Descripcion, cambio.IdOrigen);
             db.Set<MarcadorGeografico>().Add(marcador);
             marcadorPorOrigen[cambio.IdOrigen] = marcador.Id;
-
-            if (coordenadas.Any(c => DistanciaMetros(c.Latitud, c.Longitud, cambio.Latitud, cambio.Longitud) <= RadioConflictoMetros))
-            {
-                conflictos++; // RN-03: se incorpora y se registra como conflicto, sin bloquear.
-            }
-
-            coordenadas.Add((cambio.Latitud, cambio.Longitud));
+            nuevos.Add((marcador.Id, cambio.Latitud, cambio.Longitud));
             aplicados++;
         }
 
@@ -90,6 +80,18 @@ public sealed class ServicioSincronizacion(GeoVialDbContext db) : IServicioSincr
         marca.ConcluirSubida();
 
         await db.SaveChangesAsync(ct);
+
+        // RN-03: los marcadores nuevos dentro de un radio quedan registrados como conflicto,
+        // sin bloquear la subida; se cuentan los conflictos detectados en este lote.
+        var conflictos = 0;
+        foreach (var nuevo in nuevos)
+        {
+            if (await DeteccionConflictos.RegistrarAsync(db, idRelevamiento, nuevo.Id, nuevo.Lat, nuevo.Lng, ct))
+            {
+                conflictos++;
+            }
+        }
+
         return new ResultadoSubida(aplicados, reenviados, conflictos);
     }
 
@@ -187,7 +189,7 @@ public sealed class ServicioSincronizacion(GeoVialDbContext db) : IServicioSincr
     }
 
     private static bool EnConflicto(Guid id, double lat, double lng, IEnumerable<(Guid Id, double Lat, double Lng)> todos)
-        => todos.Any(o => o.Id != id && DistanciaMetros(lat, lng, o.Lat, o.Lng) <= RadioConflictoMetros);
+        => todos.Any(o => o.Id != id && DeteccionConflictos.DistanciaMetros(lat, lng, o.Lat, o.Lng) <= DeteccionConflictos.RadioMetros);
 
     // Marca opaca: instante en formato ISO 8601 de ida y vuelta. Nula/vacía = sincronización completa.
     private static DateTimeOffset InterpretarMarca(string? marca)
@@ -206,18 +208,4 @@ public sealed class ServicioSincronizacion(GeoVialDbContext db) : IServicioSincr
     }
 
     private static string Serializar(DateTimeOffset marca) => marca.ToString("O", CultureInfo.InvariantCulture);
-
-    /// <summary>Distancia aproximada entre dos coordenadas en metros (fórmula de Haversine).</summary>
-    private static double DistanciaMetros(double lat1, double lon1, double lat2, double lon2)
-    {
-        const double radioTierra = 6_371_000.0;
-        var dLat = GradosARadianes(lat2 - lat1);
-        var dLon = GradosARadianes(lon2 - lon1);
-        var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2)
-                + Math.Cos(GradosARadianes(lat1)) * Math.Cos(GradosARadianes(lat2))
-                  * Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
-        return radioTierra * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
-    }
-
-    private static double GradosARadianes(double grados) => grados * Math.PI / 180.0;
 }

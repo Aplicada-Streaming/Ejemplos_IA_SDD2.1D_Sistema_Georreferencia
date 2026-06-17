@@ -44,9 +44,26 @@ public sealed class ServicioRelevamientos(GeoVialDbContext db) : IServicioReleva
     public async Task<RelevamientoDto> CambiarEstadoAsync(Guid idJefe, Guid idRelevamiento, EstadoRelevamiento nuevo, CancellationToken ct = default)
     {
         var rel = await CargarDelJefeAsync(idJefe, idRelevamiento, ct);
+
+        // Cierre (CU-14, RN-05): solo desde revisión y sin conflictos de marcadores pendientes.
+        if (nuevo == EstadoRelevamiento.Cerrado && rel.Estado != EstadoRelevamiento.Cerrado)
+        {
+            if (!rel.EstaEnRevision)
+            {
+                throw new RelevamientoNoEnRevisionException();
+            }
+
+            var hayConflictos = await db.Set<ConflictoMarcadores>()
+                .AnyAsync(c => c.RelevamientoId == rel.Id && c.Estado == EstadoConflicto.Pendiente, ct);
+            if (hayConflictos)
+            {
+                throw new ConflictosPendientesException();
+            }
+        }
+
         try
         {
-            rel.Avanzar(nuevo);
+            rel.CambiarEstado(nuevo);
         }
         catch (InvalidOperationException ex)
         {
@@ -137,6 +154,10 @@ public sealed class ServicioRelevamientos(GeoVialDbContext db) : IServicioReleva
 
         db.Set<MarcadorGeografico>().Add(marcador);
         await db.SaveChangesAsync(ct);
+
+        // RN-03: si cae dentro del radio de otros marcadores, queda registrado como conflicto.
+        await DeteccionConflictos.RegistrarAsync(db, idRelevamiento, marcador.Id, marcador.Latitud, marcador.Longitud, ct);
+
         return new MarcadorDto(marcador.Id, marcador.Latitud, marcador.Longitud, marcador.Descripcion, marcador.FechaCreacion, 0, []);
     }
 

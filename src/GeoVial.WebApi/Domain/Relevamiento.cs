@@ -10,8 +10,9 @@ public enum EstadoRelevamiento
 
 /// <summary>
 /// Relevamiento de un tramo vial: lo crea y administra el jefe de área, agrupa marcadores
-/// y se asigna a agentes de campo. El estado avanza solo hacia adelante (recolección →
-/// revisión → cierre); no se puede operar un relevamiento cerrado.
+/// y se asigna a agentes de campo. El ciclo de estados sigue RN-05: recolección ↔ revisión
+/// (con retorno controlado), revisión → cierre (precondición: sin conflictos pendientes) y
+/// reapertura cierre → revisión; ninguna otra transición es válida.
 /// </summary>
 public sealed class Relevamiento
 {
@@ -24,6 +25,9 @@ public sealed class Relevamiento
     public EstadoRelevamiento Estado { get; private set; } = EstadoRelevamiento.Recoleccion;
     public Guid IdJefeArea { get; private set; }
     public DateTimeOffset FechaCreacion { get; private set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>Momento del cierre; nulo mientras no esté cerrado (CU-14).</summary>
+    public DateTimeOffset? CerradoEn { get; private set; }
 
     public IReadOnlyCollection<MarcadorGeografico> Marcadores => _marcadores;
     public IReadOnlyCollection<AsignacionAgente> Asignaciones => _asignaciones;
@@ -43,16 +47,36 @@ public sealed class Relevamiento
     }
 
     public bool EstaCerrado => Estado == EstadoRelevamiento.Cerrado;
+    public bool EstaEnRevision => Estado == EstadoRelevamiento.Revision;
 
-    public void Avanzar(EstadoRelevamiento nuevo)
+    /// <summary>
+    /// Aplica una transición de estado válida según RN-05. La precondición de ausencia de
+    /// conflictos pendientes para el cierre se valida en la capa de aplicación (que conoce los
+    /// conflictos). Transicionar al estado actual es un no-op idempotente.
+    /// </summary>
+    public void CambiarEstado(EstadoRelevamiento destino)
     {
-        if ((int)nuevo != (int)Estado + 1)
+        if (destino == Estado)
         {
-            throw new InvalidOperationException(
-                $"Transición inválida de {Estado} a {nuevo}: el estado solo avanza un paso (recolección → revisión → cierre).");
+            return;
         }
 
-        Estado = nuevo;
+        var permitido = (Estado, destino) switch
+        {
+            (EstadoRelevamiento.Recoleccion, EstadoRelevamiento.Revision) => true,
+            (EstadoRelevamiento.Revision, EstadoRelevamiento.Recoleccion) => true,
+            (EstadoRelevamiento.Revision, EstadoRelevamiento.Cerrado) => true,
+            (EstadoRelevamiento.Cerrado, EstadoRelevamiento.Revision) => true,
+            _ => false,
+        };
+
+        if (!permitido)
+        {
+            throw new InvalidOperationException($"Transición no permitida de {Estado} a {destino} (RN-05).");
+        }
+
+        Estado = destino;
+        CerradoEn = destino == EstadoRelevamiento.Cerrado ? DateTimeOffset.UtcNow : null;
     }
 
     public MarcadorGeografico AgregarMarcador(double latitud, double longitud, string? descripcion)
@@ -165,6 +189,9 @@ public sealed class Observacion
         Nota = string.IsNullOrWhiteSpace(nota) ? null : nota.Trim();
         IdOrigen = string.IsNullOrWhiteSpace(idOrigen) ? null : idOrigen.Trim();
     }
+
+    /// <summary>Reancla la observación a otro marcador (al unificar marcadores en conflicto, CU-13).</summary>
+    public void Reanclar(Guid nuevoMarcadorId) => MarcadorId = nuevoMarcadorId;
 }
 
 /// <summary>
@@ -243,6 +270,61 @@ public sealed class Foto
         Latitud = latitud;
         Longitud = longitud;
         PendienteUbicacion = latitud is null || longitud is null;
+    }
+}
+
+/// <summary>Estado de un conflicto de marcadores.</summary>
+public enum EstadoConflicto
+{
+    Pendiente = 0,
+    Resuelto = 1,
+}
+
+/// <summary>Decisión del jefe al resolver un conflicto de marcadores (CU-13).</summary>
+public enum ResolucionConflicto
+{
+    Unificar = 0,
+    Separar = 1,
+}
+
+/// <summary>
+/// Conflicto de dos o más marcadores dentro de un mismo radio (RN-03). Es un estado válido que
+/// convive con la recolección y la revisión, y se resuelve al cierre (CU-13): unificándolos en
+/// uno solo o manteniéndolos separados. Su resolución es precondición del cierre (RN-05).
+/// </summary>
+public sealed class ConflictoMarcadores
+{
+    public Guid Id { get; private set; } = Guid.NewGuid();
+    public Guid RelevamientoId { get; private set; }
+    public EstadoConflicto Estado { get; private set; } = EstadoConflicto.Pendiente;
+    public ResolucionConflicto? Resolucion { get; private set; }
+    public DateTimeOffset DetectadoEn { get; private set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? ResueltoEn { get; private set; }
+
+    private ConflictoMarcadores() { }
+
+    public ConflictoMarcadores(Guid relevamientoId) => RelevamientoId = relevamientoId;
+
+    public void Resolver(ResolucionConflicto resolucion)
+    {
+        Estado = EstadoConflicto.Resuelto;
+        Resolucion = resolucion;
+        ResueltoEn = DateTimeOffset.UtcNow;
+    }
+}
+
+/// <summary>Marcador involucrado en un conflicto (relación 1—2..N del modelo conceptual).</summary>
+public sealed class ConflictoMarcadorMiembro
+{
+    public Guid ConflictoId { get; private set; }
+    public Guid MarcadorId { get; private set; }
+
+    private ConflictoMarcadorMiembro() { }
+
+    public ConflictoMarcadorMiembro(Guid conflictoId, Guid marcadorId)
+    {
+        ConflictoId = conflictoId;
+        MarcadorId = marcadorId;
     }
 }
 

@@ -386,4 +386,106 @@ public sealed class RelevamientosTests(FabricaWebApi fabrica) : IClassFixture<Fa
         var bajada = await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/sincronizacion/bajada", new SolicitudBajada("no-es-una-marca"));
         bajada.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    /// <summary>Crea un relevamiento del jefe con dos marcadores dentro del radio (conflicto detectado).</summary>
+    private async Task<(Guid IdRel, Guid M1, Guid M2)> RelevamientoConConflictoAsync(HttpClient c)
+    {
+        var (tokenJa, _, _) = await CrearJerarquiaAsync(c);
+        Con(c, tokenJa);
+        var rel = (await (await c.PostAsJsonAsync("/api/v1/relevamientos", new CrearRelevamientoRequest("Tramo conflicto", "Camino"))).Content.ReadFromJsonAsync<RelevamientoDto>())!;
+        var m1 = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores", new CrearMarcadorRequest(-34.600000, -58.400000, "A"))).Content.ReadFromJsonAsync<MarcadorDto>())!;
+        var m2 = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores", new CrearMarcadorRequest(-34.600005, -58.400005, "B"))).Content.ReadFromJsonAsync<MarcadorDto>())!;
+        return (rel.Id, m1.Id, m2.Id);
+    }
+
+    [Fact]
+    public async Task Conflicto_unificar_reasigna_observaciones_y_une_etiquetas()
+    {
+        var c = _fabrica.CreateClient();
+        var (idRel, m1, m2) = await RelevamientoConConflictoAsync(c);
+
+        // Etiquetas distintas en cada marcador y una observación en el que será absorbido (m2).
+        var e1 = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/etiquetas", new CrearEtiquetaRequest("fisura"))).Content.ReadFromJsonAsync<EtiquetaDto>())!;
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/marcadores/{m1}/etiquetas", new EtiquetarMarcadorRequest(e1.Id))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var e2 = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/etiquetas", new CrearEtiquetaRequest("bache"))).Content.ReadFromJsonAsync<EtiquetaDto>())!;
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/marcadores/{m2}/etiquetas", new EtiquetarMarcadorRequest(e2.Id))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/marcadores/{m2}/observaciones", new CrearObservacionRequest("Erosión"))).StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // A revisión: se habilita la resolución (RN-05).
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/transicion", new CambiarEstadoRequest(EstadoRelevamiento.Revision))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var conflictos = (await c.GetFromJsonAsync<List<ConflictoDto>>($"/api/v1/relevamientos/{idRel}/conflictos"))!;
+        conflictos.Should().ContainSingle();
+        conflictos[0].Marcadores.Should().HaveCount(2);
+
+        // CU-13 CA-01/CA-02: unificar reasigna observaciones y conserva la unión de etiquetas.
+        var resuelto = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/conflictos/{conflictos[0].Id}/resolucion", new ResolverConflictoRequest(ResolucionConflicto.Unificar))).Content.ReadFromJsonAsync<ConflictoDto>())!;
+        resuelto.Estado.Should().Be(EstadoConflicto.Resuelto);
+        resuelto.Resolucion.Should().Be(ResolucionConflicto.Unificar);
+
+        var marcadores = (await c.GetFromJsonAsync<List<MarcadorDto>>($"/api/v1/relevamientos/{idRel}/marcadores"))!;
+        marcadores.Should().ContainSingle(m => m.Id == m1);
+        var resultante = marcadores.Single();
+        resultante.CantidadObservaciones.Should().Be(1);
+        resultante.Etiquetas.Should().Contain(new[] { "bache", "fisura" });
+
+        (await c.GetFromJsonAsync<List<ConflictoDto>>($"/api/v1/relevamientos/{idRel}/conflictos"))!.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Cierre_bloqueado_con_conflictos_luego_permitido_y_reapertura()
+    {
+        var c = _fabrica.CreateClient();
+        var (idRel, _, _) = await RelevamientoConConflictoAsync(c);
+
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/transicion", new CambiarEstadoRequest(EstadoRelevamiento.Revision))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // CU-14 CA-02: no se cierra con conflictos pendientes.
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/transicion", new CambiarEstadoRequest(EstadoRelevamiento.Cerrado))).StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        // Resolver separando conserva ambos marcadores.
+        var conflictos = (await c.GetFromJsonAsync<List<ConflictoDto>>($"/api/v1/relevamientos/{idRel}/conflictos"))!;
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/conflictos/{conflictos[0].Id}/resolucion", new ResolverConflictoRequest(ResolucionConflicto.Separar))).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await c.GetFromJsonAsync<List<MarcadorDto>>($"/api/v1/relevamientos/{idRel}/marcadores"))!.Should().HaveCount(2);
+
+        // CU-14 CA-01: cierre permitido tras resolver.
+        var cerrar = await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/transicion", new CambiarEstadoRequest(EstadoRelevamiento.Cerrado));
+        cerrar.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await cerrar.Content.ReadFromJsonAsync<RelevamientoDto>())!.Estado.Should().Be(EstadoRelevamiento.Cerrado);
+
+        // CU-14 CA-04 / RN-05: reapertura controlada a revisión.
+        var reabrir = await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/transicion", new CambiarEstadoRequest(EstadoRelevamiento.Revision));
+        reabrir.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await reabrir.Content.ReadFromJsonAsync<RelevamientoDto>())!.Estado.Should().Be(EstadoRelevamiento.Revision);
+    }
+
+    [Fact]
+    public async Task Resolver_conflicto_fuera_de_revision_409()
+    {
+        var c = _fabrica.CreateClient();
+        var (idRel, _, _) = await RelevamientoConConflictoAsync(c);
+
+        // En recolección: listar conflictos se permite, pero resolver no (CU-13 CA-03).
+        var conflictos = (await c.GetFromJsonAsync<List<ConflictoDto>>($"/api/v1/relevamientos/{idRel}/conflictos"))!;
+        conflictos.Should().ContainSingle();
+
+        var resp = await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/conflictos/{conflictos[0].Id}/resolucion", new ResolverConflictoRequest(ResolucionConflicto.Separar));
+        resp.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task Retorno_controlado_de_revision_a_recoleccion()
+    {
+        var c = _fabrica.CreateClient();
+        var (tokenJa, _, _) = await CrearJerarquiaAsync(c);
+        Con(c, tokenJa);
+        var rel = (await (await c.PostAsJsonAsync("/api/v1/relevamientos", new CrearRelevamientoRequest("Tramo R", "Camino R"))).Content.ReadFromJsonAsync<RelevamientoDto>())!;
+
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/transicion", new CambiarEstadoRequest(EstadoRelevamiento.Revision))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // RN-05: retorno controlado revisión → recolección.
+        var retorno = await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/transicion", new CambiarEstadoRequest(EstadoRelevamiento.Recoleccion));
+        retorno.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await retorno.Content.ReadFromJsonAsync<RelevamientoDto>())!.Estado.Should().Be(EstadoRelevamiento.Recoleccion);
+    }
 }
