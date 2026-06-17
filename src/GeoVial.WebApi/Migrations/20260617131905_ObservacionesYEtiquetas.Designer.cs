@@ -3,6 +3,7 @@ using System;
 using GeoVial.WebApi.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GeoVial.WebApi.Migrations
 {
     [DbContext(typeof(GeoVialDbContext))]
-    partial class GeoVialDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260617131905_ObservacionesYEtiquetas")]
+    partial class ObservacionesYEtiquetas
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.11");
@@ -33,74 +36,6 @@ namespace GeoVial.WebApi.Migrations
                     b.HasIndex("IdAgente");
 
                     b.ToTable("asignaciones_agente", (string)null);
-                });
-
-            modelBuilder.Entity("GeoVial.WebApi.Domain.Comentario", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("FechaCreacion")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("FotoId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Texto")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FotoId")
-                        .IsUnique();
-
-                    b.ToTable("comentarios", (string)null);
-                });
-
-            modelBuilder.Entity("GeoVial.WebApi.Domain.ConflictoMarcadorMiembro", b =>
-                {
-                    b.Property<Guid>("ConflictoId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("MarcadorId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("ConflictoId", "MarcadorId");
-
-                    b.HasIndex("MarcadorId");
-
-                    b.ToTable("conflictos_marcador_miembro", (string)null);
-                });
-
-            modelBuilder.Entity("GeoVial.WebApi.Domain.ConflictoMarcadores", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("DetectadoEn")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Estado")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("RelevamientoId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("Resolucion")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset?>("ResueltoEn")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RelevamientoId", "Estado");
-
-                    b.ToTable("conflictos_marcadores", (string)null);
                 });
 
             modelBuilder.Entity("GeoVial.WebApi.Domain.Etiqueta", b =>
@@ -140,82 +75,10 @@ namespace GeoVial.WebApi.Migrations
                     b.ToTable("etiquetas_marcador", (string)null);
                 });
 
-            modelBuilder.Entity("GeoVial.WebApi.Domain.Foto", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ContentType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("FechaCreacion")
-                        .HasColumnType("TEXT");
-
-                    b.Property<double?>("Latitud")
-                        .HasColumnType("REAL");
-
-                    b.Property<double?>("Longitud")
-                        .HasColumnType("REAL");
-
-                    b.Property<Guid>("ObservacionId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("PendienteUbicacion")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("ReferenciaAlmacen")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ObservacionId");
-
-                    b.ToTable("fotos", (string)null);
-                });
-
-            modelBuilder.Entity("GeoVial.WebApi.Domain.MarcaSincronizacion", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("ActualizadoEn")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("ClienteId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("RelevamientoId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("SubidaConcluida")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("Valor")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClienteId");
-
-                    b.HasIndex("RelevamientoId", "ClienteId")
-                        .IsUnique();
-
-                    b.ToTable("marcas_sincronizacion", (string)null);
-                });
-
             modelBuilder.Entity("GeoVial.WebApi.Domain.MarcadorGeografico", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("ActualizadoEn")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Descripcion")
@@ -223,10 +86,6 @@ namespace GeoVial.WebApi.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("FechaCreacion")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("IdOrigen")
-                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<double>("Latitud")
@@ -240,9 +99,7 @@ namespace GeoVial.WebApi.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RelevamientoId", "ActualizadoEn");
-
-                    b.HasIndex("RelevamientoId", "IdOrigen");
+                    b.HasIndex("RelevamientoId");
 
                     b.ToTable("marcadores", (string)null);
                 });
@@ -257,10 +114,6 @@ namespace GeoVial.WebApi.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("FechaCreacion")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("IdOrigen")
-                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("MarcadorId")
@@ -283,9 +136,6 @@ namespace GeoVial.WebApi.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("CerradoEn")
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Estado")
@@ -366,39 +216,6 @@ namespace GeoVial.WebApi.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("GeoVial.WebApi.Domain.Comentario", b =>
-                {
-                    b.HasOne("GeoVial.WebApi.Domain.Foto", null)
-                        .WithMany()
-                        .HasForeignKey("FotoId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("GeoVial.WebApi.Domain.ConflictoMarcadorMiembro", b =>
-                {
-                    b.HasOne("GeoVial.WebApi.Domain.ConflictoMarcadores", null)
-                        .WithMany()
-                        .HasForeignKey("ConflictoId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("GeoVial.WebApi.Domain.MarcadorGeografico", null)
-                        .WithMany()
-                        .HasForeignKey("MarcadorId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("GeoVial.WebApi.Domain.ConflictoMarcadores", b =>
-                {
-                    b.HasOne("GeoVial.WebApi.Domain.Relevamiento", null)
-                        .WithMany()
-                        .HasForeignKey("RelevamientoId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("GeoVial.WebApi.Domain.Etiqueta", b =>
                 {
                     b.HasOne("GeoVial.WebApi.Domain.Relevamiento", null)
@@ -420,30 +237,6 @@ namespace GeoVial.WebApi.Migrations
                         .WithMany()
                         .HasForeignKey("MarcadorId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("GeoVial.WebApi.Domain.Foto", b =>
-                {
-                    b.HasOne("GeoVial.WebApi.Domain.Observacion", null)
-                        .WithMany()
-                        .HasForeignKey("ObservacionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("GeoVial.WebApi.Domain.MarcaSincronizacion", b =>
-                {
-                    b.HasOne("GeoVial.WebApi.Domain.Usuario", null)
-                        .WithMany()
-                        .HasForeignKey("ClienteId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("GeoVial.WebApi.Domain.Relevamiento", null)
-                        .WithMany()
-                        .HasForeignKey("RelevamientoId")
-                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

@@ -52,7 +52,14 @@ public sealed record CrearRelevamientoRequest(string Nombre, string TramoVial);
 
 public sealed record CambiarEstadoRequest(EstadoRelevamiento NuevoEstado);
 
-public sealed record MarcadorDto(Guid Id, double Latitud, double Longitud, string? Descripcion, DateTimeOffset FechaCreacion);
+public sealed record MarcadorDto(
+    Guid Id,
+    double Latitud,
+    double Longitud,
+    string? Descripcion,
+    DateTimeOffset FechaCreacion,
+    int CantidadObservaciones,
+    IReadOnlyList<string> Etiquetas);
 
 public sealed record CrearMarcadorRequest(double Latitud, double Longitud, string? Descripcion);
 

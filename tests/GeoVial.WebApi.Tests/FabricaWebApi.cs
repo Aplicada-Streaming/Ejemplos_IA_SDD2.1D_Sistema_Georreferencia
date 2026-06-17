@@ -1,3 +1,4 @@
+using GeoVial.Storage.Abstractions;
 using GeoVial.WebApi.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -45,6 +46,15 @@ public sealed class FabricaWebApi : WebApplicationFactory<Program>
             }
 
             servicios.AddDbContext<GeoVialDbContext>(o => o.UseInMemoryDatabase(_dbName));
+
+            // Almacén de archivos en memoria: las pruebas no tocan el disco.
+            var almacen = servicios.SingleOrDefault(d => d.ServiceType == typeof(IObjectStore));
+            if (almacen is not null)
+            {
+                servicios.Remove(almacen);
+            }
+
+            servicios.AddSingleton<IObjectStore, AlmacenEnMemoria>();
         });
     }
 }

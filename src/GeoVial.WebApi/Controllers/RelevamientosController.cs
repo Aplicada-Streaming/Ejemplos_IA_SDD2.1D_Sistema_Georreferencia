@@ -1,5 +1,3 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 using GeoVial.WebApi.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,7 +12,7 @@ namespace GeoVial.WebApi.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/v1/relevamientos")]
-public sealed class RelevamientosController(IServicioRelevamientos servicio) : ControllerBase
+public sealed class RelevamientosController(IServicioRelevamientos servicio) : ControladorAutenticado
 {
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<RelevamientoDto>), StatusCodes.Status200OK)]
@@ -59,11 +57,63 @@ public sealed class RelevamientosController(IServicioRelevamientos servicio) : C
         return CreatedAtAction(nameof(ListarMarcadores), new { id }, creado);
     }
 
-    private Guid IdUsuarioActual()
+    [HttpPut("{id:guid}/marcadores/{idMarcador:guid}")]
+    [ProducesResponseType(typeof(MarcadorDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<MarcadorDto>> MoverMarcador(Guid id, Guid idMarcador, [FromBody] MoverMarcadorRequest req, CancellationToken ct)
+        => Ok(await servicio.MoverMarcadorAsync(IdUsuarioActual(), id, idMarcador, req, ct));
+
+    [HttpDelete("{id:guid}/marcadores/{idMarcador:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> BajaMarcador(Guid id, Guid idMarcador, CancellationToken ct)
     {
-        var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
-        return Guid.TryParse(sub, out var id)
-            ? id
-            : throw new OperacionNoAutorizadaException("El token no identifica a un usuario válido.");
+        await servicio.BajaMarcadorAsync(IdUsuarioActual(), id, idMarcador, ct);
+        return NoContent();
+    }
+
+    [HttpGet("{id:guid}/marcadores/{idMarcador:guid}/observaciones")]
+    [ProducesResponseType(typeof(IReadOnlyList<ObservacionDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<ObservacionDto>>> ListarObservaciones(Guid id, Guid idMarcador, CancellationToken ct)
+        => Ok(await servicio.ListarObservacionesAsync(IdUsuarioActual(), id, idMarcador, ct));
+
+    [HttpPost("{id:guid}/marcadores/{idMarcador:guid}/observaciones")]
+    [ProducesResponseType(typeof(ObservacionDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ObservacionDto>> CrearObservacion(Guid id, Guid idMarcador, [FromBody] CrearObservacionRequest req, CancellationToken ct)
+    {
+        var creada = await servicio.CrearObservacionAsync(IdUsuarioActual(), id, idMarcador, req, ct);
+        return CreatedAtAction(nameof(ListarObservaciones), new { id, idMarcador }, creada);
+    }
+
+    [HttpGet("{id:guid}/etiquetas")]
+    [ProducesResponseType(typeof(IReadOnlyList<EtiquetaDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<EtiquetaDto>>> ListarEtiquetas(Guid id, CancellationToken ct)
+        => Ok(await servicio.ListarEtiquetasAsync(IdUsuarioActual(), id, ct));
+
+    [HttpPost("{id:guid}/etiquetas")]
+    [ProducesResponseType(typeof(EtiquetaDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<EtiquetaDto>> CrearEtiqueta(Guid id, [FromBody] CrearEtiquetaRequest req, CancellationToken ct)
+    {
+        var creada = await servicio.CrearEtiquetaAsync(IdUsuarioActual(), id, req, ct);
+        return CreatedAtAction(nameof(ListarEtiquetas), new { id }, creada);
+    }
+
+    [HttpPost("{id:guid}/marcadores/{idMarcador:guid}/etiquetas")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> EtiquetarMarcador(Guid id, Guid idMarcador, [FromBody] EtiquetarMarcadorRequest req, CancellationToken ct)
+    {
+        await servicio.EtiquetarMarcadorAsync(IdUsuarioActual(), id, idMarcador, req.IdEtiqueta, ct);
+        return NoContent();
+    }
+
+    [HttpDelete("{id:guid}/marcadores/{idMarcador:guid}/etiquetas/{idEtiqueta:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> QuitarEtiquetaMarcador(Guid id, Guid idMarcador, Guid idEtiqueta, CancellationToken ct)
+    {
+        await servicio.QuitarEtiquetaMarcadorAsync(IdUsuarioActual(), id, idMarcador, idEtiqueta, ct);
+        return NoContent();
     }
 }
