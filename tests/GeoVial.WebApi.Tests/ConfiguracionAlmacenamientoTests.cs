@@ -4,6 +4,9 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using GeoVial.WebApi.Application;
 using GeoVial.WebApi.Domain;
+using GeoVial.WebApi.Infrastructure;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GeoVial.WebApi.Tests;
 
@@ -79,5 +82,22 @@ public sealed class ConfiguracionAlmacenamientoTests(FabricaWebApi fabrica) : IC
         var tokenJg = await LoginAsync(c, $"jg-{sufijo}", Clave);
         Con(c, tokenJg);
         (await c.GetAsync("/api/v1/almacenamiento")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Activar_persiste_el_destino_para_sobrevivir_reinicios()
+    {
+        var c = _fabrica.CreateClient();
+        Con(c, await LoginAsync(c, FabricaWebApi.UsuarioRaiz, FabricaWebApi.ContrasenaRaiz));
+
+        (await c.PutAsJsonAsync("/api/v1/almacenamiento/activo", new ActivarAlmacenamientoRequest("memoria")))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // El destino activo queda persistido como ajuste del sistema (lo restaura el arranque, CU-17).
+        using var scope = _fabrica.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GeoVialDbContext>();
+        var ajuste = await db.Set<AjusteSistema>().FirstOrDefaultAsync(a => a.Clave == AjusteSistema.ProveedorAlmacenamientoActivo);
+        ajuste.Should().NotBeNull();
+        ajuste!.Valor.Should().Be("memoria");
     }
 }

@@ -125,6 +125,13 @@ public sealed class GeoVialDbContext(DbContextOptions<GeoVialDbContext> options)
         conflictoMiembro.HasOne<ConflictoMarcadores>().WithMany().HasForeignKey(cm => cm.ConflictoId).OnDelete(DeleteBehavior.Cascade);
         conflictoMiembro.HasOne<MarcadorGeografico>().WithMany().HasForeignKey(cm => cm.MarcadorId).OnDelete(DeleteBehavior.Restrict);
 
+        var ajuste = modelBuilder.Entity<AjusteSistema>();
+        ajuste.ToTable("ajustes_sistema");
+        ajuste.HasKey(a => a.Clave);
+        ajuste.Property(a => a.Clave).HasMaxLength(200);
+        ajuste.Property(a => a.Valor).IsRequired().HasMaxLength(500);
+        ajuste.Property(a => a.ActualizadoEn).IsRequired();
+
         var claveIdempotencia = modelBuilder.Entity<ClaveIdempotencia>();
         claveIdempotencia.ToTable("claves_idempotencia");
         claveIdempotencia.HasKey(k => k.Id);
