@@ -1,0 +1,73 @@
+@page "/login"
+@using GeoVial.Mobile.Servicios
+@inject ClienteApi Api
+@inject EstadoSesion Sesion
+@inject NavigationManager Nav
+
+<PageTitle>Ingreso — GeoVial</PageTitle>
+
+<MudPaper Class="pa-6 mt-4" Elevation="2">
+    <MudText Typo="Typo.h5" Class="mb-6">Iniciar sesión</MudText>
+    <MudForm @ref="_form">
+        <MudTextField @bind-Value="_usuario" Label="Usuario" Required="true"
+                      RequiredError="Ingresá tu usuario." />
+        <MudTextField @bind-Value="_contrasena" Label="Contraseña" InputType="InputType.Password"
+                      Required="true" RequiredError="Ingresá tu contraseña." Class="mt-4" />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-4">@_error</MudAlert>
+        }
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                   OnClick="IngresarAsync" Disabled="_ocupado" Class="mt-6">
+            @(_ocupado ? "Ingresando…" : "Ingresar")
+        </MudButton>
+    </MudForm>
+</MudPaper>
+
+@code {
+    private MudForm _form = default!;
+    private string _usuario = string.Empty;
+    private string _contrasena = string.Empty;
+    private string? _error;
+    private bool _ocupado;
+
+    protected override void OnInitialized()
+    {
+        if (Sesion.EstaAutenticado)
+        {
+            Nav.NavigateTo("/relevamientos");
+        }
+    }
+
+    private async Task IngresarAsync()
+    {
+        await _form.Validate();
+        if (!_form.IsValid)
+        {
+            return;
+        }
+
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            var login = await Api.LoginAsync(new SolicitudLogin(_usuario, _contrasena));
+            Sesion.Iniciar(login);
+            Nav.NavigateTo("/relevamientos");
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception)
+        {
+            _error = "No se pudo conectar con el servidor de la API.";
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}
