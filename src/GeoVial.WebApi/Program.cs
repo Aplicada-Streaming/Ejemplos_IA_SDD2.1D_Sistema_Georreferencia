@@ -43,6 +43,7 @@ builder.Services.AddScoped<IServicioRelevamientos, ServicioRelevamientos>();
 builder.Services.AddScoped<IServicioFotos, ServicioFotos>();
 builder.Services.AddScoped<IServicioSincronizacion, ServicioSincronizacion>();
 builder.Services.AddScoped<IServicioConflictos, ServicioConflictos>();
+builder.Services.AddScoped<IServicioPortabilidad, ServicioPortabilidad>();
 
 // --- Autenticación por token bearer ---
 // La validación se configura desde el mismo OpcionesToken que usa el emisor (IOptions),
