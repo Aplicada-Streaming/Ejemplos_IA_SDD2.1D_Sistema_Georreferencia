@@ -91,17 +91,26 @@ public sealed class MarcadorGeografico
     public double Latitud { get; private set; }
     public double Longitud { get; private set; }
     public string? Descripcion { get; private set; }
+
+    /// <summary>Identificador de origen del cliente para la idempotencia de la sincronización (RN-07); nulo si se creó en línea.</summary>
+    public string? IdOrigen { get; private set; }
+
     public DateTimeOffset FechaCreacion { get; private set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>Marca temporal de la última modificación; sostiene el cálculo de novedades de la bajada (CU-11).</summary>
+    public DateTimeOffset ActualizadoEn { get; private set; } = DateTimeOffset.UtcNow;
 
     private MarcadorGeografico() { }
 
-    public MarcadorGeografico(Guid relevamientoId, double latitud, double longitud, string? descripcion)
+    public MarcadorGeografico(Guid relevamientoId, double latitud, double longitud, string? descripcion, string? idOrigen = null)
     {
         ValidarCoordenada(latitud, longitud);
         RelevamientoId = relevamientoId;
         Latitud = latitud;
         Longitud = longitud;
         Descripcion = string.IsNullOrWhiteSpace(descripcion) ? null : descripcion.Trim();
+        IdOrigen = string.IsNullOrWhiteSpace(idOrigen) ? null : idOrigen.Trim();
+        ActualizadoEn = FechaCreacion;
     }
 
     /// <summary>
@@ -113,6 +122,7 @@ public sealed class MarcadorGeografico
         ValidarCoordenada(latitud, longitud);
         Latitud = latitud;
         Longitud = longitud;
+        ActualizadoEn = DateTimeOffset.UtcNow;
     }
 
     private static void ValidarCoordenada(double latitud, double longitud)
@@ -140,15 +150,20 @@ public sealed class Observacion
     public Guid MarcadorId { get; private set; }
     public Guid AutorId { get; private set; }
     public string? Nota { get; private set; }
+
+    /// <summary>Identificador de origen del cliente para la idempotencia de la sincronización (RN-07); nulo si se creó en línea.</summary>
+    public string? IdOrigen { get; private set; }
+
     public DateTimeOffset FechaCreacion { get; private set; } = DateTimeOffset.UtcNow;
 
     private Observacion() { }
 
-    public Observacion(Guid marcadorId, Guid autorId, string? nota)
+    public Observacion(Guid marcadorId, Guid autorId, string? nota, string? idOrigen = null)
     {
         MarcadorId = marcadorId;
         AutorId = autorId;
         Nota = string.IsNullOrWhiteSpace(nota) ? null : nota.Trim();
+        IdOrigen = string.IsNullOrWhiteSpace(idOrigen) ? null : idOrigen.Trim();
     }
 }
 
@@ -228,6 +243,57 @@ public sealed class Foto
         Latitud = latitud;
         Longitud = longitud;
         PendienteUbicacion = latitud is null || longitud is null;
+    }
+}
+
+/// <summary>
+/// Punto de sincronización de un relevamiento para un cliente de campo (RC-06). Sostiene el
+/// orden subir-antes-de-bajar (RN-06) con la compuerta <see cref="SubidaConcluida"/> y la
+/// monotonía de la marca opaca <see cref="Valor"/>. Única por par (relevamiento, cliente).
+/// </summary>
+public sealed class MarcaSincronizacion
+{
+    public Guid Id { get; private set; } = Guid.NewGuid();
+    public Guid RelevamientoId { get; private set; }
+    public Guid ClienteId { get; private set; }
+
+    /// <summary>Marca opaca para el cliente; solo avanza (RC-06).</summary>
+    public DateTimeOffset Valor { get; private set; }
+
+    /// <summary>Compuerta del orden subir-antes-de-bajar del ciclo en curso (RN-06).</summary>
+    public bool SubidaConcluida { get; private set; }
+
+    public DateTimeOffset ActualizadoEn { get; private set; } = DateTimeOffset.UtcNow;
+
+    private MarcaSincronizacion() { }
+
+    public MarcaSincronizacion(Guid relevamientoId, Guid clienteId)
+    {
+        RelevamientoId = relevamientoId;
+        ClienteId = clienteId;
+        Valor = DateTimeOffset.UnixEpoch;
+    }
+
+    /// <summary>Marca la subida del ciclo como concluida (habilita la bajada, RN-06).</summary>
+    public void ConcluirSubida()
+    {
+        SubidaConcluida = true;
+        ActualizadoEn = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>
+    /// Adopta la nueva marca tras una bajada y reinicia la compuerta para exigir una nueva
+    /// subida en el próximo ciclo. La marca solo avanza (RC-06).
+    /// </summary>
+    public void AvanzarMarca(DateTimeOffset nueva)
+    {
+        if (nueva > Valor)
+        {
+            Valor = nueva;
+        }
+
+        SubidaConcluida = false;
+        ActualizadoEn = DateTimeOffset.UtcNow;
     }
 }
 

@@ -38,6 +38,8 @@ public sealed class ManejadorExcepciones(IProblemDetailsService problemDetailsSe
     {
         CredencialesInvalidasException e => (StatusCodes.Status401Unauthorized, e.Codigo),
         OperacionNoAutorizadaException e => (StatusCodes.Status403Forbidden, e.Codigo),
+        RelevamientoNoAsignadoException e => (StatusCodes.Status403Forbidden, e.Codigo),
+        SubidaNoConcluidaException e => (StatusCodes.Status409Conflict, e.Codigo),
         UsuarioYaExisteException e => (StatusCodes.Status409Conflict, e.Codigo),
         UsuarioNoEncontradoException e => (StatusCodes.Status404NotFound, e.Codigo),
         RelevamientoNoEncontradoException e => (StatusCodes.Status404NotFound, e.Codigo),

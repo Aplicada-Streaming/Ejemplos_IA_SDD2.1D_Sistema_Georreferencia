@@ -270,4 +270,120 @@ public sealed class RelevamientosTests(FabricaWebApi fabrica) : IClassFixture<Fa
         var subida = await c.PostAsync($"/api/v1/relevamientos/{rel.Id}/observaciones/{obs.Id}/fotos", form);
         subida.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
     }
+
+    /// <summary>Crea un relevamiento del jefe con el agente asignado y devuelve sus tokens e ids.</summary>
+    private async Task<(Guid IdRelevamiento, string TokenAgente)> RelevamientoAsignadoAsync(HttpClient c)
+    {
+        var (tokenJa, tokenAg, idAgente) = await CrearJerarquiaAsync(c);
+        Con(c, tokenJa);
+        var rel = (await (await c.PostAsJsonAsync("/api/v1/relevamientos", new CrearRelevamientoRequest("Tramo sync", "Camino sync"))).Content.ReadFromJsonAsync<RelevamientoDto>())!;
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/agentes", new AsignarAgenteRequest(idAgente))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        return (rel.Id, tokenAg);
+    }
+
+    [Fact]
+    public async Task Ciclo_subida_idempotente_y_bajada_por_marca()
+    {
+        var c = _fabrica.CreateClient();
+        var (idRel, tokenAg) = await RelevamientoAsignadoAsync(c);
+        Con(c, tokenAg);
+
+        var lote = new LoteSincronizacion(
+            new[]
+            {
+                new CambioMarcador("m-1", -34.0, -58.0, "Puente norte"),
+                new CambioMarcador("m-2", -35.0, -58.0, "Puente sur"),
+            },
+            new[] { new CambioObservacion("o-1", "m-1", "Fisura") });
+
+        // CU-10 / CA-01: el lote nuevo se aplica entero.
+        var subida = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/sincronizacion/subida", lote)).Content.ReadFromJsonAsync<ResultadoSubida>())!;
+        subida.Aplicados.Should().Be(3);
+        subida.Reenviados.Should().Be(0);
+        subida.Conflictos.Should().Be(0);
+
+        // RN-07 / CA-02: reenviar el mismo lote no duplica; se reconocen los reenvíos.
+        var reenvio = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/sincronizacion/subida", lote)).Content.ReadFromJsonAsync<ResultadoSubida>())!;
+        reenvio.Aplicados.Should().Be(0);
+        reenvio.Reenviados.Should().Be(3);
+
+        // CU-11: la bajada entrega las novedades y una marca nueva.
+        var bajada = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/sincronizacion/bajada", new SolicitudBajada(null))).Content.ReadFromJsonAsync<ResultadoBajada>())!;
+        bajada.Marcadores.Should().HaveCount(2);
+        bajada.Observaciones.Should().HaveCount(1);
+        bajada.MarcaNueva.Should().NotBeNullOrWhiteSpace();
+
+        // La bajada reinicia la compuerta: una nueva subida habilita la siguiente bajada.
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/sincronizacion/subida", new LoteSincronizacion(Array.Empty<CambioMarcador>(), Array.Empty<CambioObservacion>())))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // CU-11 / since-mark: bajar con la marca previa no trae novedades anteriores a ella.
+        var sinNovedades = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/sincronizacion/bajada", new SolicitudBajada(bajada.MarcaNueva))).Content.ReadFromJsonAsync<ResultadoBajada>())!;
+        sinNovedades.Marcadores.Should().BeEmpty();
+        sinNovedades.Observaciones.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Bajada_sin_subida_concluida_409()
+    {
+        var c = _fabrica.CreateClient();
+        var (idRel, tokenAg) = await RelevamientoAsignadoAsync(c);
+        Con(c, tokenAg);
+
+        // RN-06 / CA-02: bajar sin haber subido en el ciclo se rechaza.
+        var bajada = await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/sincronizacion/bajada", new SolicitudBajada(null));
+        bajada.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task Agente_no_asignado_no_puede_sincronizar_403()
+    {
+        var c = _fabrica.CreateClient();
+        var (tokenJa, tokenAg, _) = await CrearJerarquiaAsync(c);
+
+        // Relevamiento del jefe SIN asignar al agente.
+        Con(c, tokenJa);
+        var rel = (await (await c.PostAsJsonAsync("/api/v1/relevamientos", new CrearRelevamientoRequest("Tramo ajeno", "Camino ajeno"))).Content.ReadFromJsonAsync<RelevamientoDto>())!;
+
+        Con(c, tokenAg);
+        var lote = new LoteSincronizacion(new[] { new CambioMarcador("m-x", -34.0, -58.0, null) }, Array.Empty<CambioObservacion>());
+        var subida = await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/sincronizacion/subida", lote);
+        subida.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Subida_de_marcadores_en_radio_registra_conflicto_sin_bloquear()
+    {
+        var c = _fabrica.CreateClient();
+        var (idRel, tokenAg) = await RelevamientoAsignadoAsync(c);
+        Con(c, tokenAg);
+
+        // Dos marcadores a ~1 m: el segundo entra en conflicto (RN-03) pero el lote se aplica.
+        var lote = new LoteSincronizacion(
+            new[]
+            {
+                new CambioMarcador("a", -34.600000, -58.400000, null),
+                new CambioMarcador("b", -34.600005, -58.400005, null),
+            },
+            Array.Empty<CambioObservacion>());
+
+        var subida = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/sincronizacion/subida", lote)).Content.ReadFromJsonAsync<ResultadoSubida>())!;
+        subida.Aplicados.Should().Be(2);
+        subida.Conflictos.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Bajada_con_marca_invalida_400()
+    {
+        var c = _fabrica.CreateClient();
+        var (idRel, tokenAg) = await RelevamientoAsignadoAsync(c);
+        Con(c, tokenAg);
+
+        // Concluir la subida para superar la compuerta y llegar a validar la marca.
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/sincronizacion/subida", new LoteSincronizacion(Array.Empty<CambioMarcador>(), Array.Empty<CambioObservacion>())))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var bajada = await c.PostAsJsonAsync($"/api/v1/relevamientos/{idRel}/sincronizacion/bajada", new SolicitudBajada("no-es-una-marca"));
+        bajada.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }

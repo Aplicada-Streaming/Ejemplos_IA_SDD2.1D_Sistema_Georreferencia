@@ -49,7 +49,13 @@ public sealed class GeoVialDbContext(DbContextOptions<GeoVialDbContext> options)
         marcador.Property(m => m.Latitud).IsRequired();
         marcador.Property(m => m.Longitud).IsRequired();
         marcador.Property(m => m.Descripcion).HasMaxLength(500);
+        marcador.Property(m => m.IdOrigen).HasMaxLength(128);
         marcador.Property(m => m.FechaCreacion).IsRequired();
+        marcador.Property(m => m.ActualizadoEn).IsRequired();
+        marcador.HasIndex(m => new { m.RelevamientoId, m.ActualizadoEn });
+        // Lookup del id de origen para reconocer reenvíos en la subida (RN-07); la unicidad
+        // efectiva la garantiza la capa de aplicación (el id_origen puede ser nulo en línea).
+        marcador.HasIndex(m => new { m.RelevamientoId, m.IdOrigen });
 
         var asignacion = modelBuilder.Entity<AsignacionAgente>();
         asignacion.ToTable("asignaciones_agente");
@@ -61,6 +67,7 @@ public sealed class GeoVialDbContext(DbContextOptions<GeoVialDbContext> options)
         observacion.ToTable("observaciones");
         observacion.HasKey(o => o.Id);
         observacion.Property(o => o.Nota).HasMaxLength(2000);
+        observacion.Property(o => o.IdOrigen).HasMaxLength(128);
         observacion.Property(o => o.FechaCreacion).IsRequired();
         observacion.HasIndex(o => o.MarcadorId);
         // RC-02: la observación exige un marcador existente; sin cascada para no perder
@@ -100,5 +107,16 @@ public sealed class GeoVialDbContext(DbContextOptions<GeoVialDbContext> options)
         // A lo sumo un comentario por foto (cardinalidad 1—0..1).
         comentario.HasIndex(co => co.FotoId).IsUnique();
         comentario.HasOne<Foto>().WithMany().HasForeignKey(co => co.FotoId).OnDelete(DeleteBehavior.Cascade);
+
+        var marca = modelBuilder.Entity<MarcaSincronizacion>();
+        marca.ToTable("marcas_sincronizacion");
+        marca.HasKey(s => s.Id);
+        marca.Property(s => s.Valor).IsRequired();
+        marca.Property(s => s.SubidaConcluida).IsRequired();
+        marca.Property(s => s.ActualizadoEn).IsRequired();
+        // Una marca por par relevamiento-cliente (RC-06).
+        marca.HasIndex(s => new { s.RelevamientoId, s.ClienteId }).IsUnique();
+        marca.HasOne<Relevamiento>().WithMany().HasForeignKey(s => s.RelevamientoId).OnDelete(DeleteBehavior.Cascade);
+        marca.HasOne<Usuario>().WithMany().HasForeignKey(s => s.ClienteId).OnDelete(DeleteBehavior.Restrict);
     }
 }
