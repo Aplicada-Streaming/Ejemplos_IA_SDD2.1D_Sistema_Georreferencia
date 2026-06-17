@@ -90,6 +90,40 @@ public sealed class ClienteApi(HttpClient http, EstadoSesion sesion)
         return (await resp.Content.ReadFromJsonAsync<MarcadorDto>(ct))!;
     }
 
+    public async Task<IReadOnlyList<FotoDto>> ListarFotosPorMarcadorAsync(Guid idRelevamiento, Guid idMarcador, CancellationToken ct = default)
+    {
+        using var req = Autorizado(HttpMethod.Get, $"api/v1/relevamientos/{idRelevamiento}/marcadores/{idMarcador}/fotos");
+        using var resp = await http.SendAsync(req, ct);
+        await GarantizarExitoAsync(resp, ct);
+        return (await resp.Content.ReadFromJsonAsync<List<FotoDto>>(ct)) ?? [];
+    }
+
+    /// <summary>Descarga el binario de una foto (para mostrarlo como data URI en la revisión).</summary>
+    public async Task<byte[]> DescargarFotoAsync(Guid idRelevamiento, Guid idFoto, CancellationToken ct = default)
+    {
+        using var req = Autorizado(HttpMethod.Get, $"api/v1/relevamientos/{idRelevamiento}/fotos/{idFoto}/contenido");
+        using var resp = await http.SendAsync(req, ct);
+        await GarantizarExitoAsync(resp, ct);
+        return await resp.Content.ReadAsByteArrayAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<ConflictoDto>> ListarConflictosAsync(Guid idRelevamiento, CancellationToken ct = default)
+    {
+        using var req = Autorizado(HttpMethod.Get, $"api/v1/relevamientos/{idRelevamiento}/conflictos");
+        using var resp = await http.SendAsync(req, ct);
+        await GarantizarExitoAsync(resp, ct);
+        return (await resp.Content.ReadFromJsonAsync<List<ConflictoDto>>(ct)) ?? [];
+    }
+
+    public async Task<ConflictoDto> ResolverConflictoAsync(Guid idRelevamiento, Guid idConflicto, ResolucionConflicto resolucion, CancellationToken ct = default)
+    {
+        using var req = Autorizado(HttpMethod.Post, $"api/v1/relevamientos/{idRelevamiento}/conflictos/{idConflicto}/resolucion");
+        req.Content = JsonContent.Create(new ResolverConflictoRequest(resolucion));
+        using var resp = await http.SendAsync(req, ct);
+        await GarantizarExitoAsync(resp, ct);
+        return (await resp.Content.ReadFromJsonAsync<ConflictoDto>(ct))!;
+    }
+
     private HttpRequestMessage Autorizado(HttpMethod metodo, string ruta)
     {
         var req = new HttpRequestMessage(metodo, ruta);

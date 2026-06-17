@@ -16,16 +16,56 @@
 {
     <MudText Typo="Typo.h4" Class="mb-1">@rel.Nombre</MudText>
     <MudText Typo="Typo.subtitle1" Class="mb-4">
-        @rel.TramoVial — <MudChip T="string" Size="Size.Small">@rel.Estado.Texto()</MudChip>
+        @rel.TramoVial — <MudChip T="string" Size="Size.Small" Color="@ColorEstado(rel.Estado)">@rel.Estado.Texto()</MudChip>
     </MudText>
 
-    @if (_puedeEditar)
+    @if (_esJefe)
     {
         <MudPaper Class="pa-4 mb-4" Elevation="1">
-            <MudText Typo="Typo.body2" Class="mb-2">
-                Hacé clic en el mapa para agregar un marcador con esta descripción:
-            </MudText>
-            <MudTextField @bind-Value="_descripcionNueva" Label="Descripción del marcador" Variant="Variant.Outlined" />
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Estado del relevamiento</MudText>
+            <div class="d-flex gap-2 flex-wrap">
+                @foreach (var destino in TransicionesDisponibles(rel.Estado))
+                {
+                    <MudButton Variant="Variant.Filled"
+                               Color="@(destino == EstadoRelevamiento.Cerrado ? Color.Success : Color.Primary)"
+                               OnClick="@(() => TransicionarAsync(destino))" Disabled="_ocupado">
+                        @TextoTransicion(rel.Estado, destino)
+                    </MudButton>
+                }
+            </div>
+        </MudPaper>
+    }
+
+    @if (_esJefe && _conflictos.Count > 0)
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="1">
+            <MudText Typo="Typo.h6" Class="mb-2">Conflictos de marcadores (@_conflictos.Count)</MudText>
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                Hay conflictos pendientes; resolvelos (unificar o separar) antes de cerrar el relevamiento.
+                @if (!EnRevision)
+                {
+                    <text> Pasá el relevamiento a revisión para poder resolverlos.</text>
+                }
+            </MudAlert>
+            @foreach (var conflicto in _conflictos)
+            {
+                <MudPaper Class="pa-3 mb-2" Outlined="true">
+                    <MudText Typo="Typo.body2" Class="mb-1">Marcadores en conflicto:</MudText>
+                    <MudList T="string" Dense="true">
+                        @foreach (var m in conflicto.Marcadores)
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Place"
+                                         Text="@($"{(string.IsNullOrWhiteSpace(m.Descripcion) ? "(sin descripción)" : m.Descripcion)} — {m.Latitud.ToString("0.00000")}, {m.Longitud.ToString("0.00000")}")" />
+                        }
+                    </MudList>
+                    <div class="d-flex gap-2 mt-2">
+                        <MudButton Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled" Disabled="@(_ocupado || !EnRevision)"
+                                   OnClick="@(() => ResolverAsync(conflicto.Id, ResolucionConflicto.Unificar))">Unificar</MudButton>
+                        <MudButton Size="Size.Small" Color="Color.Secondary" Variant="Variant.Outlined" Disabled="@(_ocupado || !EnRevision)"
+                                   OnClick="@(() => ResolverAsync(conflicto.Id, ResolucionConflicto.Separar))">Separar</MudButton>
+                    </div>
+                </MudPaper>
+            }
         </MudPaper>
     }
 
@@ -41,6 +81,7 @@
                 <MudTh>Observaciones</MudTh>
                 <MudTh>Etiquetas</MudTh>
                 <MudTh>Creado</MudTh>
+                <MudTh></MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd DataLabel="Latitud">@context.Latitud.ToString("0.00000")</MudTd>
@@ -54,12 +95,58 @@
                     }
                 </MudTd>
                 <MudTd DataLabel="Creado">@context.FechaCreacion.ToString("yyyy-MM-dd HH:mm")</MudTd>
+                <MudTd>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.PhotoLibrary"
+                               OnClick="@(() => VerFotosAsync(context.Id))">Fotos</MudButton>
+                </MudTd>
             </RowTemplate>
             <NoRecordsContent>
                 <MudText>Todavía no hay marcadores.</MudText>
             </NoRecordsContent>
         </MudTable>
     </MudPaper>
+
+    @if (_marcadorFotos is not null)
+    {
+        <MudPaper Class="pa-4 mt-4" Elevation="1">
+            <div class="d-flex justify-space-between align-center mb-2">
+                <MudText Typo="Typo.h6">Fotos del marcador (@_fotos.Count)</MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="@(() => _marcadorFotos = null)" />
+            </div>
+            @if (_cargandoFotos)
+            {
+                <MudProgressLinear Indeterminate="true" Class="my-2" />
+            }
+            else if (_fotos.Count == 0)
+            {
+                <MudText>Este marcador no tiene fotos.</MudText>
+            }
+            else
+            {
+                <MudGrid>
+                    @foreach (var foto in _fotos)
+                    {
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudCard Outlined="true">
+                                @if (_imagenes.TryGetValue(foto.Id, out var dataUri))
+                                {
+                                    <MudImage Src="@dataUri" Height="180" ObjectFit="ObjectFit.Cover" Fluid="true" />
+                                }
+                                <MudCardContent>
+                                    <MudText Typo="Typo.body2">@(string.IsNullOrWhiteSpace(foto.Comentario) ? "(sin comentario)" : foto.Comentario)</MudText>
+                                    <MudText Typo="Typo.caption">
+                                        @(foto.PendienteUbicacion
+                                            ? "Ubicación pendiente"
+                                            : $"{foto.Latitud?.ToString("0.00000")}, {foto.Longitud?.ToString("0.00000")}")
+                                    </MudText>
+                                </MudCardContent>
+                            </MudCard>
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+        </MudPaper>
+    }
 }
 else if (_cargado)
 {
@@ -71,14 +158,24 @@ else if (_cargado)
 
     private RelevamientoDto? _relevamiento;
     private IReadOnlyList<MarcadorDto> _marcadores = [];
+    private IReadOnlyList<ConflictoDto> _conflictos = [];
     private string _descripcionNueva = string.Empty;
     private bool _cargado;
+    private bool _esJefe;
     private bool _puedeEditar;
+    private bool _ocupado;
+
+    private Guid? _marcadorFotos;
+    private IReadOnlyList<FotoDto> _fotos = [];
+    private readonly Dictionary<Guid, string> _imagenes = [];
+    private bool _cargandoFotos;
 
     private ElementReference _mapaElemento;
     private IJSObjectReference? _modulo;
     private DotNetObjectReference<RelevamientoDetalle>? _refDotNet;
     private bool _mapaInicializado;
+
+    private bool EnRevision => _relevamiento?.Estado == EstadoRelevamiento.Revision;
 
     protected override async Task OnInitializedAsync()
     {
@@ -88,14 +185,17 @@ else if (_cargado)
             return;
         }
 
+        _esJefe = Sesion.Usuario!.Rol == Rol.JefeDeArea;
+
         try
         {
             var relevamientos = await Api.ListarRelevamientosAsync();
             _relevamiento = relevamientos.FirstOrDefault(r => r.Id == Id);
             if (_relevamiento is { } rel)
             {
-                _puedeEditar = Sesion.Usuario!.Rol == Rol.JefeDeArea && rel.Estado != EstadoRelevamiento.Cerrado;
+                _puedeEditar = _esJefe && rel.Estado != EstadoRelevamiento.Cerrado;
                 _marcadores = await Api.ListarMarcadoresAsync(Id);
+                await RecargarConflictosAsync();
             }
         }
         catch (ApiException ex)
@@ -148,6 +248,7 @@ else if (_cargado)
                 await _modulo.InvokeVoidAsync("agregarMarcador", _mapaElemento, creado.Latitud, creado.Longitud, creado.Descripcion);
             }
 
+            await RecargarConflictosAsync();
             Snackbar.Add("Marcador agregado.", Severity.Success);
             StateHasChanged();
         }
@@ -156,6 +257,135 @@ else if (_cargado)
             Snackbar.Add(ex.Message, Severity.Error);
         }
     }
+
+    private async Task TransicionarAsync(EstadoRelevamiento destino)
+    {
+        _ocupado = true;
+        try
+        {
+            _relevamiento = await Api.CambiarEstadoRelevamientoAsync(Id, destino);
+            _puedeEditar = _esJefe && _relevamiento.Estado != EstadoRelevamiento.Cerrado;
+            await RecargarConflictosAsync();
+            Snackbar.Add($"Relevamiento en {_relevamiento.Estado.Texto().ToLowerInvariant()}.", Severity.Success);
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task ResolverAsync(Guid idConflicto, ResolucionConflicto resolucion)
+    {
+        _ocupado = true;
+        try
+        {
+            await Api.ResolverConflictoAsync(Id, idConflicto, resolucion);
+            // Unificar reasigna observaciones y elimina marcadores: recargar tabla y mapa.
+            _marcadores = await Api.ListarMarcadoresAsync(Id);
+            await RecargarConflictosAsync();
+            await ReinicializarMapaAsync();
+            Snackbar.Add(resolucion == ResolucionConflicto.Unificar ? "Marcadores unificados." : "Conflicto resuelto (separados).", Severity.Success);
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task VerFotosAsync(Guid idMarcador)
+    {
+        _marcadorFotos = idMarcador;
+        _fotos = [];
+        _imagenes.Clear();
+        _cargandoFotos = true;
+        try
+        {
+            _fotos = await Api.ListarFotosPorMarcadorAsync(Id, idMarcador);
+            foreach (var foto in _fotos)
+            {
+                var bytes = await Api.DescargarFotoAsync(Id, foto.Id);
+                _imagenes[foto.Id] = $"data:{foto.ContentType};base64,{Convert.ToBase64String(bytes)}";
+            }
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _cargandoFotos = false;
+        }
+    }
+
+    private async Task RecargarConflictosAsync()
+    {
+        if (!_esJefe)
+        {
+            return;
+        }
+
+        try
+        {
+            _conflictos = await Api.ListarConflictosAsync(Id);
+        }
+        catch (ApiException)
+        {
+            // Los conflictos son complementarios; si no hay acceso, no se interrumpe la vista.
+            _conflictos = [];
+        }
+    }
+
+    private async Task ReinicializarMapaAsync()
+    {
+        if (_modulo is null || !_mapaInicializado)
+        {
+            return;
+        }
+
+        try
+        {
+            await _modulo.InvokeVoidAsync("destruir", _mapaElemento);
+        }
+        catch (JSException)
+        {
+            // Si el mapa ya no está disponible, la próxima renderización lo recrea.
+        }
+
+        _mapaInicializado = false; // OnAfterRenderAsync vuelve a inicializarlo con los marcadores actuales.
+    }
+
+    private static IReadOnlyList<EstadoRelevamiento> TransicionesDisponibles(EstadoRelevamiento estado) => estado switch
+    {
+        EstadoRelevamiento.Recoleccion => [EstadoRelevamiento.Revision],
+        EstadoRelevamiento.Revision => [EstadoRelevamiento.Recoleccion, EstadoRelevamiento.Cerrado],
+        EstadoRelevamiento.Cerrado => [EstadoRelevamiento.Revision],
+        _ => [],
+    };
+
+    private static string TextoTransicion(EstadoRelevamiento origen, EstadoRelevamiento destino) => (origen, destino) switch
+    {
+        (_, EstadoRelevamiento.Cerrado) => "Cerrar relevamiento",
+        (EstadoRelevamiento.Cerrado, EstadoRelevamiento.Revision) => "Reabrir (a revisión)",
+        (EstadoRelevamiento.Revision, EstadoRelevamiento.Recoleccion) => "Volver a recolección",
+        (_, EstadoRelevamiento.Revision) => "Pasar a revisión",
+        _ => $"Pasar a {destino.Texto().ToLowerInvariant()}",
+    };
+
+    private static Color ColorEstado(EstadoRelevamiento estado) => estado switch
+    {
+        EstadoRelevamiento.Recoleccion => Color.Info,
+        EstadoRelevamiento.Revision => Color.Warning,
+        EstadoRelevamiento.Cerrado => Color.Success,
+        _ => Color.Default,
+    };
 
     private static bool EsVacio(string? s) => string.IsNullOrWhiteSpace(s);
 

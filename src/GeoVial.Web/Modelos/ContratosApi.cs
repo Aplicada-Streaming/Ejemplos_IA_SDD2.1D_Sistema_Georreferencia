@@ -63,6 +63,39 @@ public sealed record MarcadorDto(
 
 public sealed record CrearMarcadorRequest(double Latitud, double Longitud, string? Descripcion);
 
+public sealed record FotoDto(
+    Guid Id,
+    Guid ObservacionId,
+    double? Latitud,
+    double? Longitud,
+    bool PendienteUbicacion,
+    string? Comentario,
+    string ContentType,
+    DateTimeOffset FechaCreacion);
+
+public enum EstadoConflicto
+{
+    Pendiente = 0,
+    Resuelto = 1,
+}
+
+public enum ResolucionConflicto
+{
+    Unificar = 0,
+    Separar = 1,
+}
+
+public sealed record ConflictoMarcadorDto(Guid Id, double Latitud, double Longitud, string? Descripcion);
+
+public sealed record ConflictoDto(
+    Guid Id,
+    EstadoConflicto Estado,
+    ResolucionConflicto? Resolucion,
+    DateTimeOffset DetectadoEn,
+    IReadOnlyList<ConflictoMarcadorDto> Marcadores);
+
+public sealed record ResolverConflictoRequest(ResolucionConflicto Resolucion);
+
 public static class EstadoRelevamientoDescripcion
 {
     public static string Texto(this EstadoRelevamiento estado) => estado switch
