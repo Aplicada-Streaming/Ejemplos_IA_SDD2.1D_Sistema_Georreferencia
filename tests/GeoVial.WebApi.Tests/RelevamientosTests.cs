@@ -488,4 +488,102 @@ public sealed class RelevamientosTests(FabricaWebApi fabrica) : IClassFixture<Fa
         retorno.StatusCode.Should().Be(HttpStatusCode.OK);
         (await retorno.Content.ReadFromJsonAsync<RelevamientoDto>())!.Estado.Should().Be(EstadoRelevamiento.Recoleccion);
     }
+
+    [Fact]
+    public async Task Portabilidad_exportar_e_importar_reconstruye_la_estructura()
+    {
+        var c = _fabrica.CreateClient();
+        var (tokenJa, _, _) = await CrearJerarquiaAsync(c);
+
+        // Estructura origen: relevamiento con marcador, etiqueta, observación y foto.
+        Con(c, tokenJa);
+        var rel = (await (await c.PostAsJsonAsync("/api/v1/relevamientos", new CrearRelevamientoRequest("Tramo export", "Ruta export"))).Content.ReadFromJsonAsync<RelevamientoDto>())!;
+        var marcador = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores", new CrearMarcadorRequest(-34.6, -58.4, "Junta"))).Content.ReadFromJsonAsync<MarcadorDto>())!;
+        var etiqueta = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/etiquetas", new CrearEtiquetaRequest("fisura"))).Content.ReadFromJsonAsync<EtiquetaDto>())!;
+        (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores/{marcador.Id}/etiquetas", new EtiquetarMarcadorRequest(etiqueta.Id))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var obs = (await (await c.PostAsJsonAsync($"/api/v1/relevamientos/{rel.Id}/marcadores/{marcador.Id}/observaciones", new CrearObservacionRequest("Fisura longitudinal"))).Content.ReadFromJsonAsync<ObservacionDto>())!;
+        var bytesFoto = new byte[] { 9, 8, 7, 6, 5, 4 };
+        using (var formFoto = FormularioFoto(bytesFoto, "image/jpeg", new Dictionary<string, string> { ["LatitudIncrustada"] = "-34.6", ["LongitudIncrustada"] = "-58.4", ["Comentario"] = "Detalle" }))
+        {
+            (await c.PostAsync($"/api/v1/relevamientos/{rel.Id}/observaciones/{obs.Id}/fotos", formFoto)).StatusCode.Should().Be(HttpStatusCode.Created);
+        }
+
+        // CU-15: exportar como unidad transferible (ZIP).
+        var exportar = await c.GetAsync($"/api/v1/relevamientos/{rel.Id}/exportacion");
+        exportar.StatusCode.Should().Be(HttpStatusCode.OK);
+        var zip = await exportar.Content.ReadAsByteArrayAsync();
+        zip.Should().NotBeEmpty();
+
+        // CU-16: importar reconstruye un relevamiento distinto con la estructura intacta.
+        using var formImport = new MultipartFormDataContent();
+        var unidad = new ByteArrayContent(zip);
+        unidad.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        formImport.Add(unidad, "unidad", "relevamiento.zip");
+        var importar = await c.PostAsync("/api/v1/relevamientos/importacion", formImport);
+        importar.StatusCode.Should().Be(HttpStatusCode.Created);
+        var resultado = (await importar.Content.ReadFromJsonAsync<ResultadoImportacion>())!;
+        resultado.IdRelevamiento.Should().NotBe(rel.Id);
+        resultado.FotosNoAlojadas.Should().BeEmpty();
+
+        // El relevamiento importado aparece en el ámbito del jefe con su estructura.
+        var lista = await c.GetFromJsonAsync<List<RelevamientoDto>>("/api/v1/relevamientos");
+        lista!.Should().Contain(r => r.Id == resultado.IdRelevamiento);
+
+        var marcadores = (await c.GetFromJsonAsync<List<MarcadorDto>>($"/api/v1/relevamientos/{resultado.IdRelevamiento}/marcadores"))!;
+        marcadores.Should().ContainSingle();
+        marcadores[0].CantidadObservaciones.Should().Be(1);
+        marcadores[0].Etiquetas.Should().Contain("fisura");
+
+        var fotosImportadas = await c.GetFromJsonAsync<List<FotoImportadaDto>>($"/api/v1/relevamientos/{resultado.IdRelevamiento}/marcadores/{marcadores[0].Id}/fotos");
+        fotosImportadas!.Should().ContainSingle();
+
+        // El binario de la foto se reconstruyó fiel.
+        var contenido = await c.GetAsync($"/api/v1/relevamientos/{resultado.IdRelevamiento}/fotos/{fotosImportadas![0].Id}/contenido");
+        contenido.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await contenido.Content.ReadAsByteArrayAsync()).Should().Equal(bytesFoto);
+    }
+
+    [Fact]
+    public async Task Exportar_relevamiento_fuera_de_ambito_403()
+    {
+        var c = _fabrica.CreateClient();
+        var (tokenJa, tokenAg, _) = await CrearJerarquiaAsync(c);
+
+        Con(c, tokenJa);
+        var rel = (await (await c.PostAsJsonAsync("/api/v1/relevamientos", new CrearRelevamientoRequest("Tramo propio", "Camino"))).Content.ReadFromJsonAsync<RelevamientoDto>())!;
+
+        // El agente (no es el jefe dueño) no puede exportarlo.
+        Con(c, tokenAg);
+        (await c.GetAsync($"/api/v1/relevamientos/{rel.Id}/exportacion")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Importar_como_agente_403()
+    {
+        var c = _fabrica.CreateClient();
+        var (_, tokenAg, _) = await CrearJerarquiaAsync(c);
+
+        Con(c, tokenAg);
+        using var form = new MultipartFormDataContent();
+        var unidad = new ByteArrayContent(new byte[] { 1, 2, 3 });
+        unidad.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        form.Add(unidad, "unidad", "x.zip");
+        (await c.PostAsync("/api/v1/relevamientos/importacion", form)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Importar_unidad_invalida_400()
+    {
+        var c = _fabrica.CreateClient();
+        var (tokenJa, _, _) = await CrearJerarquiaAsync(c);
+
+        Con(c, tokenJa);
+        using var form = new MultipartFormDataContent();
+        var unidad = new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes("esto no es un zip"));
+        unidad.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        form.Add(unidad, "unidad", "x.zip");
+        (await c.PostAsync("/api/v1/relevamientos/importacion", form)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    private sealed record FotoImportadaDto(Guid Id, Guid ObservacionId, double? Latitud, double? Longitud, bool PendienteUbicacion, string? Comentario, string ContentType, DateTimeOffset FechaCreacion);
 }
